@@ -109,6 +109,8 @@ npm run dev
    - Environment：Node
    - Build Command：`npm install && npm run build`
    - Start Command：`npm start`
+
+   環境變數可以照常設 `NODE_ENV=production`。這樣 `npm install` 不會裝 devDependencies，但建置要用的 TypeScript、Tailwind、ESLint 已經放在 dependencies，所以這行指令可以直接用。不要改成 `npm install --include=dev`。
 5. 選一個**可以加磁碟**的方案。免費方案的檔案會被清掉，訂單和收據會不見。
 6. 加一顆 Persistent Disk，掛載路徑填 `/var/data`。
 7. 在 Environment 加上：
@@ -146,6 +148,7 @@ npm run dev
 - 試用登入的判斷在 `src/lib/auth-policy.ts`：必須同時是 `NODE_ENV=development` 和 `DEV_LOGIN_ENABLED=true`。
 - 金額是整數。彙總邏輯在 `src/lib/summary.ts`，已匯款用實付金額和實付幣別，未匯款用訂單金額和訂單幣別。
 - 上傳檔只接受 JPG、PNG、WEBP、PDF，每個 5MB，存在磁碟，不進資料庫。
+- `typescript`、`@types/*`、`tailwindcss`、`@tailwindcss/postcss`、`eslint`、`eslint-config-next` 放在 dependencies。Render 在 `NODE_ENV=production` 下執行 `npm install` 時會略過 devDependencies，而 `next build` 要讀 `next.config.ts`、編譯 CSS，並做型別檢查與 lint。`vitest` 和 `tsx` 只給測試與 `db:seed`，留在 devDependencies。測試檔與 `vitest.config.ts` 不納入 Next 的型別檢查，所以正式環境不必安裝 Vitest。
 
 ```bash
 npm test
@@ -168,3 +171,6 @@ Callback URL 要和 `LINE_CALLBACK_URL` 完全一樣，包含 `https`。頻道�
 
 **重新部署後訂單不見了。**  
 磁碟沒有掛到 `DATABASE_PATH` 和 `UPLOAD_DIR`，或是用了會清空檔案的免費方案。把這兩個路徑指到永久磁碟後再部署。
+
+**建置失敗，說找不到 typescript。**  
+Build Command 用 `npm install && npm run build` 即可。`NODE_ENV=production` 可以留著。不要加 `--include=dev`。如果還是舊的程式，請先部署這個修正再重試。
