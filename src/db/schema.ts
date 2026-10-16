@@ -72,7 +72,7 @@ export const attachments = sqliteTable(
     orderId: text("order_id")
       .notNull()
       .references(() => orders.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["order_proof", "shipping_receipt"] }).notNull(),
+    kind: text("kind", { enum: ["order_proof", "shipping_receipt", "payment_proof", "reimbursement_proof"] }).notNull(),
     fileName: text("file_name").notNull(),
     mimeType: text("mime_type").notNull(),
     size: integer("size").notNull(),

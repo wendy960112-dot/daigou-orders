@@ -1,18 +1,19 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { acceptTask, updateStatus } from "@/actions/orders";
+import { acceptTask } from "@/actions/orders";
 import { AttachmentGallery } from "@/components/attachments";
 import { Notice } from "@/components/notice";
 import { FulfillForm } from "@/components/order-form";
+import { StatusForm } from "@/components/status-form";
 import { StatusBadges, TaskBadge } from "@/components/status-badges";
-import { cardClass, inputClass, primaryButtonClass } from "@/components/styles";
+import { cardClass, primaryButtonClass } from "@/components/styles";
 import { getDb } from "@/db";
 import { getOrder, listAttachments, listAudit } from "@/db/orders";
 import { getProductOption, listProductOptions } from "@/db/products";
 import { canViewOrder } from "@/lib/auth-policy";
 import { requireUser } from "@/lib/current-user";
-import { currencyLabel, formatDate, formatDateTime, formatMoney, todayTaipei } from "@/lib/format";
+import { formatDate, formatDateTime, formatMoney, todayTaipei } from "@/lib/format";
 import { deliveryLabel, resolveTaskStatus } from "@/lib/tasks";
 import type { Currency } from "@/lib/types";
 
@@ -44,6 +45,8 @@ export default async function OrderPage({
   const audit = listAudit(db, order.id);
   const proofs = files.filter((file) => file.kind === "order_proof");
   const receipts = files.filter((file) => file.kind === "shipping_receipt");
+  const paymentProofs = files.filter((file) => file.kind === "payment_proof");
+  const reimbursementProofs = files.filter((file) => file.kind === "reimbursement_proof");
   const links = (order.productLinks ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
   const taskStatus = resolveTaskStatus(order);
   const shippingCurrency = order.shippingCurrency ?? order.orderCurrency;
@@ -144,76 +147,37 @@ export default async function OrderPage({
       ) : null}
 
       {user.role === "admin" ? (
-        <form action={updateStatus} className={`${cardClass} space-y-4`}>
-          <div>
-            <h2 className="text-base font-semibold">狀態</h2>
-            <p className="mt-1 text-xs leading-5 text-muted">只有管理員可以改。日圓和新台幣不會自動換算。</p>
-          </div>
-          <input type="hidden" name="orderId" value={order.id} />
-          <label className={`flex min-h-11 items-center gap-3 text-base font-medium ${canPay ? "" : "opacity-60"}`}>
-            <input
-              type="checkbox"
-              name="paid"
-              value="on"
-              defaultChecked={order.paid}
-              disabled={!canPay}
-              className="size-5 accent-brand"
-            />
-            已匯款
-          </label>
-          <p className="text-xs leading-5 text-muted">
-            {canPay ? "錢已經轉給這位小幫手後再勾。金額可以跟訂單不同，例如用新台幣匯日圓的單。" : "小幫手還沒回報訂購金額，先不要勾已匯款。"}
-          </p>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block text-sm">
-              匯款日期
-              <input type="date" name="paidAt" defaultValue={order.paidAt ?? todayTaipei()} className={inputClass} />
-            </label>
-            <label className="block text-sm">
-              匯款金額
-              <input name="paidAmount" inputMode="numeric" defaultValue={order.paidAmount ?? order.orderAmount ?? ""} className={inputClass} />
-            </label>
-          </div>
-          <label className="block text-sm">
-            匯款幣別
-            <select name="paidCurrency" defaultValue={order.paidCurrency ?? order.orderCurrency ?? "JPY"} className={inputClass}>
-              <option value="JPY">{currencyLabel("JPY")} JPY</option>
-              <option value="TWD">{currencyLabel("TWD")} TWD</option>
-            </select>
-          </label>
-          <label className="flex min-h-11 items-center gap-3 text-base font-medium">
-            <input
-              type="checkbox"
-              name="goodsReceived"
-              value="on"
-              defaultChecked={order.goodsReceived}
-              className="size-5 accent-brand"
-            />
-            已收到貨
-          </label>
-          <p className="text-xs leading-5 text-muted">溫蒂收到小幫手轉寄的包裹後勾選。</p>
-          <label className={`flex min-h-11 items-center gap-3 text-base font-medium ${order.shippingCost == null ? "opacity-60" : ""}`}>
-            <input
-              type="checkbox"
-              name="shippingReimbursed"
-              value="on"
-              defaultChecked={order.shippingReimbursed}
-              disabled={order.shippingCost == null}
-              className="size-5 accent-brand"
-            />
-            運費已報銷
-          </label>
-          <p className="text-xs leading-5 text-muted">
-            {order.shippingCost == null ? "小幫手還沒填運費金額，還不能報銷。" : "運費已照收據金額還給小幫手後勾選。"}
-          </p>
-          <button type="submit" className={`${primaryButtonClass} w-full`}>
-            儲存狀態
-          </button>
-        </form>
+        <StatusForm
+          orderId={order.id}
+          canPay={canPay}
+          paid={order.paid}
+          paidAt={order.paidAt}
+          paidAmount={order.paidAmount}
+          paidCurrency={order.paidCurrency}
+          orderAmount={order.orderAmount}
+          orderCurrency={order.orderCurrency}
+          goodsReceived={order.goodsReceived}
+          shippingCost={order.shippingCost}
+          shippingReimbursed={order.shippingReimbursed}
+          today={todayTaipei()}
+        />
       ) : null}
 
       <AttachmentGallery title="訂單截圖" items={proofs} empty="還沒有訂單截圖。" />
       <AttachmentGallery title="運費收據" items={receipts} empty="還沒有運費收據。" />
+      {user.role === "helper" ? <p className="text-xs leading-5 text-muted">匯款證明只有你和溫蒂看得到。</p> : null}
+      <AttachmentGallery
+        title="匯款截圖"
+        items={paymentProofs}
+        empty={user.role === "helper" ? "溫蒂還沒上傳匯款截圖。" : "還沒有匯款截圖。"}
+        canDelete={user.role === "admin"}
+      />
+      <AttachmentGallery
+        title="運費報銷截圖"
+        items={reimbursementProofs}
+        empty={user.role === "helper" ? "溫蒂還沒上傳運費報銷截圖。" : "還沒有運費報銷截圖。"}
+        canDelete={user.role === "admin"}
+      />
 
       {user.role === "helper" && taskStatus !== "pending" ? (
         <section className="space-y-3">
@@ -225,6 +189,7 @@ export default async function OrderPage({
             deliveryMethod={order.deliveryMethod}
             today={todayTaipei()}
             alreadyReported={order.orderAmount != null}
+            hasOrderProof={proofs.length > 0}
             initial={order}
           />
         </section>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { makeReceiptPng } from "./png";
-import { filesFromForm, sniffMime } from "./uploads";
-import { parseOrderForm, parsePaidFields } from "./validators";
+import { filesFromForm, orderProofMessage, sniffMime } from "./uploads";
+import { parseFulfillForm, parseOrderForm, parsePaidFields } from "./validators";
 
 function orderForm(overrides: Record<string, string> = {}) {
   const form = new FormData();
@@ -48,6 +48,37 @@ describe("parsePaidFields", () => {
     expect(parsed.data.paid).toBe(false);
     expect(parsed.data.paidAmount).toBeNull();
     expect(parsed.data.goodsReceived).toBe(true);
+  });
+});
+
+describe("parseFulfillForm", () => {
+  it("fixes the carrier to EMS and leaves tracking optional", () => {
+    const form = new FormData();
+    form.set("productOptionId", "product_marukyu");
+    form.set("orderAmount", "3200");
+    form.set("orderCurrency", "JPY");
+    form.set("orderDate", "2026-10-16");
+    form.set("carrier", "Yamato");
+    const blank = parseFulfillForm(form);
+    expect(blank.ok).toBe(true);
+    if (!blank.ok) return;
+    expect(blank.data.carrier).toBe("EMS");
+    expect(blank.data.trackingNumber).toBeNull();
+
+    form.set("trackingNumber", " EE123456789JP ");
+    const filled = parseFulfillForm(form);
+    expect(filled.ok).toBe(true);
+    if (!filled.ok) return;
+    expect(filled.data.trackingNumber).toBe("EE123456789JP");
+    expect(filled.data.carrier).toBe("EMS");
+  });
+});
+
+describe("order screenshots", () => {
+  it("requires at least one order screenshot", () => {
+    expect(orderProofMessage(0, 0)).toBe("請上傳訂單截圖。");
+    expect(orderProofMessage(1, 0)).toBeNull();
+    expect(orderProofMessage(8, 1)).toBe("訂單截圖最多 8 個。");
   });
 });
 

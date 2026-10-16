@@ -66,6 +66,13 @@ export function sniffMime(buffer: Buffer): IncomingFile["mimeType"] | null {
   return null;
 }
 
+export function orderProofMessage(existing: number, incoming: number) {
+  const total = existing + incoming;
+  if (total < 1) return "請上傳訂單截圖。";
+  if (total > MAX_FILES_PER_KIND) return "訂單截圖最多 8 個。";
+  return null;
+}
+
 export async function filesFromForm(
   form: FormData,
   field: string,

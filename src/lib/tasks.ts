@@ -6,6 +6,8 @@ export const DELIVERY_METHODS = [
 
 export type DeliveryMethod = (typeof DELIVERY_METHODS)[number]["value"];
 
+export const DEFAULT_CARRIER = "EMS";
+
 export const TASK_STATUSES = [
   { value: "pending", label: "待接單" },
   { value: "accepted", label: "已接單" },

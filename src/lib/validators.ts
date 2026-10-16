@@ -1,5 +1,5 @@
 import { isRealDate, isSafeId } from "./format";
-import { isDeliveryMethod, type DeliveryMethod } from "./tasks";
+import { DEFAULT_CARRIER, isDeliveryMethod, type DeliveryMethod } from "./tasks";
 import type { Currency, OrderInput } from "./types";
 
 function fail(message: string): { ok: false; message: string } {
@@ -188,8 +188,6 @@ export function parseFulfillForm(form: FormData): { ok: true; data: FulfillField
   if (!orderCurrency.ok) return orderCurrency;
   const orderDate = parseRequiredDate(readString(form, "orderDate"), "訂購日期");
   if (!orderDate.ok) return orderDate;
-  const carrier = cleanText(readString(form, "carrier"), 100, "物流公司");
-  if (!carrier.ok) return carrier;
   const trackingNumber = cleanText(readString(form, "trackingNumber"), 100, "追蹤單號");
   if (!trackingNumber.ok) return trackingNumber;
   const shipDate = parseOptionalDate(readString(form, "shipDate"), "寄出日期");
@@ -211,7 +209,7 @@ export function parseFulfillForm(form: FormData): { ok: true; data: FulfillField
       orderAmount: orderAmount.value,
       orderCurrency: orderCurrency.value,
       orderDate: orderDate.value,
-      carrier: carrier.value,
+      carrier: DEFAULT_CARRIER,
       trackingNumber: trackingNumber.value,
       shipDate: shipDate.value,
       shippingCost: shippingCost.value,
