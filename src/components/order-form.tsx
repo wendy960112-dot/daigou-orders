@@ -1,9 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { saveOrder } from "@/actions/orders";
 import { currencyLabel } from "@/lib/format";
-import type { DeliveryMethod } from "@/lib/tasks";
+import { DEFAULT_CARRIER, type DeliveryMethod } from "@/lib/tasks";
 import { initialActionState, type Currency } from "@/lib/types";
 import { Field } from "./field";
 import { inputClass, primaryButtonClass } from "./styles";
@@ -18,6 +18,7 @@ export function FulfillForm({
   initial,
   today,
   alreadyReported,
+  hasOrderProof,
 }: {
   orderId: string;
   options: Option[];
@@ -27,7 +28,6 @@ export function FulfillForm({
     orderAmount: number | null;
     orderCurrency: Currency | null;
     orderDate: string | null;
-    carrier: string | null;
     trackingNumber: string | null;
     shipDate: string | null;
     shippingCost: number | null;
@@ -36,16 +36,35 @@ export function FulfillForm({
   };
   today: string;
   alreadyReported: boolean;
+  hasOrderProof: boolean;
 }) {
   const [state, action, pending] = useActionState(saveOrder, initialActionState);
+  const [clientError, setClientError] = useState<string | null>(null);
   const shippingTitle = deliveryMethod === "handoff" ? "面交／交付" : "轉寄";
 
   return (
-    <form action={action} className="space-y-4">
+    <form
+      action={action}
+      className="space-y-4"
+      onSubmit={(event) => {
+        if (hasOrderProof) return;
+        const field = event.currentTarget.elements.namedItem("orderProofs");
+        const selected = field instanceof HTMLInputElement ? field.files : null;
+        if (!selected || selected.length === 0) {
+          event.preventDefault();
+          setClientError("請上傳訂單截圖。");
+        }
+      }}
+    >
       <input type="hidden" name="orderId" value={orderId} />
       {!state.ok ? (
         <p className="rounded-xl bg-warn-soft px-3 py-2 text-sm text-warn" role="alert">
           {state.message}
+        </p>
+      ) : null}
+      {clientError ? (
+        <p className="rounded-xl bg-warn-soft px-3 py-2 text-sm text-warn" role="alert">
+          {clientError}
         </p>
       ) : null}
 
@@ -82,23 +101,25 @@ export function FulfillForm({
           </select>
         </Field>
       </div>
-      <Field label="訂單截圖" hint="JPG、PNG、WEBP 或 PDF，每個 5MB 以內。可以稍後再補。">
+      <Field label="訂單截圖" required={!hasOrderProof} hint="回報下單一定要附上。JPG、PNG、WEBP 或 PDF，每個 5MB 以內。">
         <input
           name="orderProofs"
           type="file"
           accept="image/jpeg,image/png,image/webp,application/pdf"
           multiple
+          aria-required={!hasOrderProof}
           className={`${inputClass} file:mr-3 file:rounded-lg file:border-0 file:bg-brand-soft file:px-3 file:py-1 file:text-sm file:font-medium file:text-brand`}
+          onChange={() => setClientError(null)}
         />
       </Field>
 
       <div className="space-y-4 rounded-2xl border border-line bg-white/60 p-3">
         <p className="text-sm font-semibold">{shippingTitle}</p>
-        <Field label={deliveryMethod === "handoff" ? "交付方式" : "物流公司"}>
-          <input name="carrier" className={inputClass} defaultValue={initial.carrier ?? ""} placeholder="黑貓宅急便、Yamato、面交" />
+        <Field label="物流公司" hint="固定為 EMS，不用改。">
+          <input name="carrier" readOnly value={DEFAULT_CARRIER} aria-readonly="true" className={`${inputClass} bg-paper`} />
         </Field>
-        <Field label="追蹤單號">
-          <input name="trackingNumber" className={inputClass} defaultValue={initial.trackingNumber ?? ""} />
+        <Field label="追蹤單號（非必填）" hint="沒有單號可以留空。">
+          <input name="trackingNumber" className={inputClass} defaultValue={initial.trackingNumber ?? ""} placeholder="可以先留空" />
         </Field>
         <Field label={deliveryMethod === "handoff" ? "交付日期" : "寄出日期"}>
           <input name="shipDate" type="date" className={inputClass} defaultValue={initial.shipDate ?? ""} />

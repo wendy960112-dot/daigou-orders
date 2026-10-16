@@ -1,6 +1,6 @@
 export type Role = "admin" | "helper" | "pending";
 export type Currency = "JPY" | "TWD";
-export type AttachmentKind = "order_proof" | "shipping_receipt";
+export type AttachmentKind = "order_proof" | "shipping_receipt" | "payment_proof" | "reimbursement_proof";
 
 export type ActionState = { ok: true; message: string } | { ok: false; message: string };
 

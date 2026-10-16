@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { getDb } from "@/db";
 import {
   acceptTask as acceptTaskRow,
+  addAttachments,
   changeStatus,
   countKind,
   deleteAttachment,
@@ -18,8 +19,9 @@ import { listHelpers } from "@/db/users";
 import { canViewOrder } from "@/lib/auth-policy";
 import { getCurrentUser } from "@/lib/current-user";
 import { isSafeId } from "@/lib/format";
+import { NOTICES } from "@/lib/notices";
 import type { ActionState } from "@/lib/types";
-import { filesFromForm, MAX_FILES_PER_KIND } from "@/lib/uploads";
+import { filesFromForm, MAX_FILES_PER_KIND, orderProofMessage } from "@/lib/uploads";
 import { parseDispatchForm, parseFulfillForm, parsePaidFields } from "@/lib/validators";
 
 function refresh(orderId?: string) {
@@ -79,9 +81,8 @@ export async function saveOrder(_prev: ActionState, formData: FormData): Promise
   const receipts = await filesFromForm(formData, "shippingReceipts", "shipping_receipt");
   if (!receipts.ok) return receipts;
   const existingFiles = listAttachments(db, orderId);
-  if (countKind(existingFiles, "order_proof") + proofs.files.length > MAX_FILES_PER_KIND) {
-    return { ok: false, message: "訂單截圖最多 8 個。" };
-  }
+  const proofError = orderProofMessage(countKind(existingFiles, "order_proof"), proofs.files.length);
+  if (proofError) return { ok: false, message: proofError };
   if (countKind(existingFiles, "shipping_receipt") + receipts.files.length > MAX_FILES_PER_KIND) {
     return { ok: false, message: "運費收據最多 8 個。" };
   }
@@ -98,7 +99,7 @@ export async function saveOrder(_prev: ActionState, formData: FormData): Promise
   redirect(`/orders/${orderId}?notice=saved`);
 }
 
-export async function updateStatus(formData: FormData) {
+export async function updateStatus(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const orderId = String(formData.get("orderId") ?? "");
@@ -107,13 +108,35 @@ export async function updateStatus(formData: FormData) {
   const db = getDb();
   const order = getOrder(db, orderId);
   if (!order || !canViewOrder(user, order)) redirect("/?notice=not_found");
+  if (user.role !== "admin") return { ok: false, message: "只有管理員可以改狀態。" };
 
   const parsed = parsePaidFields(formData);
-  if (!parsed.ok) redirect(`/orders/${orderId}?notice=invalid`);
+  if (!parsed.ok) return parsed;
+
+  const payments = await filesFromForm(formData, "paymentProofs", "payment_proof");
+  if (!payments.ok) return payments;
+  const reimbursements = await filesFromForm(formData, "reimbursementProofs", "reimbursement_proof");
+  if (!reimbursements.ok) return reimbursements;
+  const existingFiles = listAttachments(db, orderId);
+  if (countKind(existingFiles, "payment_proof") + payments.files.length > MAX_FILES_PER_KIND) {
+    return { ok: false, message: "匯款截圖最多 8 個。" };
+  }
+  if (countKind(existingFiles, "reimbursement_proof") + reimbursements.files.length > MAX_FILES_PER_KIND) {
+    return { ok: false, message: "運費報銷截圖最多 8 個。" };
+  }
 
   const result = changeStatus(db, user, orderId, parsed.data);
+  if (!result.ok) return { ok: false, message: NOTICES[result.code] ?? "沒有更新。" };
+
+  const files = [...payments.files, ...reimbursements.files];
+  if (files.length > 0) {
+    const added = addAttachments(db, user, orderId, files);
+    if (!added.ok) return { ok: false, message: added.message };
+  }
+
   refresh(orderId);
-  redirect(`/orders/${orderId}?notice=${result.ok ? result.code : result.code}`);
+  const notice = files.length > 0 && result.code === "status_same" ? "proofs" : result.code;
+  redirect(`/orders/${orderId}?notice=${notice}`);
 }
 
 export async function removeAttachment(formData: FormData) {

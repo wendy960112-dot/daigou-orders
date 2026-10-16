@@ -5,10 +5,12 @@ export function AttachmentGallery({
   title,
   items,
   empty,
+  canDelete = true,
 }: {
   title: string;
   items: Attachment[];
   empty: string;
+  canDelete?: boolean;
 }) {
   return (
     <section className="space-y-2">
@@ -26,12 +28,14 @@ export function AttachmentGallery({
             )}
             <figcaption className="flex items-center justify-between gap-2 px-2 py-2">
               <span className="truncate text-xs text-muted">{item.fileName}</span>
-              <form action={removeAttachment}>
-                <input type="hidden" name="attachmentId" value={item.id} />
-                <button type="submit" className="text-xs font-medium text-brand">
-                  刪除
-                </button>
-              </form>
+              {canDelete ? (
+                <form action={removeAttachment}>
+                  <input type="hidden" name="attachmentId" value={item.id} />
+                  <button type="submit" className="text-xs font-medium text-brand">
+                    刪除
+                  </button>
+                </form>
+              ) : null}
             </figcaption>
           </figure>
         ))}

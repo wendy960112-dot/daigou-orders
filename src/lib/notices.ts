@@ -16,6 +16,7 @@ export const NOTICES: Record<string, string> = {
   product_taken: "已經有這個商品名稱。",
   last_product: "至少要留一個可以使用的商品名稱。",
   dispatched: "已把任務派給小幫手。",
+  proofs: "已上傳截圖。",
   product_saved: "已更新商品名稱。",
   no_email: "這個人沒有電子郵件，不能重設密碼。",
   reset_link: "已產生重設連結。請複製下面的網址，用 LINE 傳給對方。",

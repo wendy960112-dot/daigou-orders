@@ -2,7 +2,7 @@ import { and, asc, count, desc, eq, gte, isNotNull, isNull, lte, or, sql } from 
 import { formatMoney, isSafeId, nowIso, todayTaipei } from "@/lib/format";
 import type { SummaryOrder } from "@/lib/summary";
 import type { DeliveryMethod, TaskStatus } from "@/lib/tasks";
-import type { Currency, OrderInput, Viewer } from "@/lib/types";
+import type { AttachmentKind, Currency, OrderInput, Viewer } from "@/lib/types";
 import type { IncomingFile } from "@/lib/uploads";
 import { removeUpload, writeUpload } from "@/lib/uploads";
 import type { StatusFilter } from "@/lib/filters";
@@ -198,6 +198,13 @@ function addAudit(
     .run();
 }
 
+function attachmentSummary(kind: AttachmentKind, fileName: string) {
+  if (kind === "order_proof") return `上傳訂單截圖：${fileName}`;
+  if (kind === "shipping_receipt") return `上傳運費收據：${fileName}`;
+  if (kind === "payment_proof") return `上傳匯款截圖：${fileName}`;
+  return `上傳運費報銷截圖：${fileName}`;
+}
+
 function storeFiles(tx: AppDb, orderId: string, actorId: string, files: IncomingFile[]) {
   const written: string[] = [];
   try {
@@ -220,7 +227,7 @@ function storeFiles(tx: AppDb, orderId: string, actorId: string, files: Incoming
         orderId,
         actorId,
         action: "attachment.added",
-        summary: file.kind === "order_proof" ? `上傳訂單截圖：${file.fileName}` : `上傳運費收據：${file.fileName}`,
+        summary: attachmentSummary(file.kind, file.fileName),
       });
     }
   } catch (error) {
@@ -322,6 +329,9 @@ export function deleteAttachment(
   if (!order) return { ok: false, code: "not_found" };
   if (actor.role === "helper" && order.helperId !== actor.id) return { ok: false, code: "forbidden" };
   if (actor.role === "pending") return { ok: false, code: "forbidden" };
+  if ((attachment.kind === "payment_proof" || attachment.kind === "reimbursement_proof") && actor.role !== "admin") {
+    return { ok: false, code: "forbidden" };
+  }
   db.delete(attachments).where(eq(attachments.id, attachmentId)).run();
   removeUpload(attachmentId);
   addAudit(db, {
@@ -565,6 +575,27 @@ export function fulfillOrder(
   } catch (error) {
     console.error(error);
     return { ok: false, message: "訂單沒有存成功，請再試一次。" };
+  }
+  return { ok: true };
+}
+
+export function addAttachments(
+  db: AppDb,
+  actor: Viewer,
+  orderId: string,
+  files: IncomingFile[],
+): { ok: true } | { ok: false; message: string } {
+  if (actor.role !== "admin") return { ok: false, message: "只有管理員可以上傳這份截圖。" };
+  if (!getOrder(db, orderId)) return { ok: false, message: "找不到訂單" };
+  if (files.length === 0) return { ok: true };
+  try {
+    db.transaction((tx) => {
+      storeFiles(tx, orderId, actor.id, files);
+      tx.update(orders).set({ updatedAt: nowIso() }).where(eq(orders.id, orderId)).run();
+    });
+  } catch (error) {
+    console.error(error);
+    return { ok: false, message: "截圖沒有上傳成功，請再試一次。" };
   }
   return { ok: true };
 }
