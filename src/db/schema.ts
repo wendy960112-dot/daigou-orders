@@ -6,6 +6,7 @@ export const users = sqliteTable("users", {
   displayName: text("display_name").notNull(),
   pictureUrl: text("picture_url"),
   role: text("role", { enum: ["admin", "helper", "pending"] }).notNull(),
+  previewSandbox: integer("preview_sandbox", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

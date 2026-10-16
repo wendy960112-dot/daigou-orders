@@ -16,8 +16,8 @@ function secretKey() {
   return new TextEncoder().encode(sessionSecret());
 }
 
-export async function setSession(userId: string) {
-  const token = await new SignJWT({ uid: userId })
+export async function setSession(userId: string, options?: { preview?: boolean }) {
+  const token = await new SignJWT({ uid: userId, preview: options?.preview === true })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(userId)
     .setIssuedAt()
@@ -38,14 +38,20 @@ export async function clearSession() {
   jar.delete(SESSION_COOKIE);
 }
 
-export async function readSessionUserId() {
+export async function readSession(): Promise<{ userId: string; preview: boolean } | null> {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secretKey());
-    return typeof payload.sub === "string" ? payload.sub : null;
+    if (typeof payload.sub !== "string") return null;
+    return { userId: payload.sub, preview: payload.preview === true };
   } catch {
     return null;
   }
+}
+
+export async function readSessionUserId() {
+  const session = await readSession();
+  return session?.userId ?? null;
 }

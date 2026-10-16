@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gte, isNotNull, lte } from "drizzle-orm";
 import { formatMoney, isSafeId, nowIso, todayTaipei } from "@/lib/format";
+import { PREVIEW_HELPER_ID } from "@/lib/preview";
 import type { SummaryOrder } from "@/lib/summary";
 import type { Currency, OrderInput, Viewer } from "@/lib/types";
 import type { IncomingFile } from "@/lib/uploads";
@@ -54,7 +55,10 @@ export function listOrders(
   if (viewer.role === "pending") return [];
   const conditions = [];
   if (viewer.role === "helper") conditions.push(eq(orders.helperId, viewer.id));
-  else if (filter.helperId) conditions.push(eq(orders.helperId, filter.helperId));
+  else {
+    conditions.push(eq(users.previewSandbox, false));
+    if (filter.helperId) conditions.push(eq(orders.helperId, filter.helperId));
+  }
   if (filter.month) {
     conditions.push(gte(orders.orderDate, `${filter.month}-01`));
     conditions.push(lte(orders.orderDate, `${filter.month}-31`));
@@ -74,8 +78,13 @@ export function listOrders(
 }
 
 export function listMonths(db: AppDb, helperId: string | null) {
-  const query = db.select({ orderDate: orders.orderDate }).from(orders);
-  const rows = helperId ? query.where(eq(orders.helperId, helperId)).all() : query.all();
+  const conditions = helperId ? [eq(orders.helperId, helperId)] : [eq(users.previewSandbox, false)];
+  const rows = db
+    .select({ orderDate: orders.orderDate })
+    .from(orders)
+    .innerJoin(users, eq(orders.helperId, users.id))
+    .where(and(...conditions))
+    .all();
   return [...new Set(rows.map((row) => row.orderDate.slice(0, 7)))].sort((a, b) => b.localeCompare(a));
 }
 
@@ -135,7 +144,29 @@ export function listSummaryOrders(db: AppDb, helperId?: string | null): SummaryO
     })
     .from(orders)
     .innerJoin(users, eq(orders.helperId, users.id));
-  return (helperId ? query.where(eq(orders.helperId, helperId)) : query).all();
+  const where = helperId ? eq(orders.helperId, helperId) : eq(users.previewSandbox, false);
+  return query.where(where).all();
+}
+
+export function resetPreviewOrders(db: AppDb) {
+  const fileIds = db
+    .select({ id: attachments.id })
+    .from(attachments)
+    .innerJoin(orders, eq(attachments.orderId, orders.id))
+    .where(eq(orders.helperId, PREVIEW_HELPER_ID))
+    .all()
+    .map((row) => row.id);
+  const removed = db.delete(orders).where(eq(orders.helperId, PREVIEW_HELPER_ID)).run();
+  for (const id of fileIds) removeUpload(id);
+  return { ok: true as const, removed: removed.changes };
+}
+
+function previewSummary(summary: string, preview?: boolean) {
+  return preview ? `（小幫手視角）${summary}` : summary;
+}
+
+function previewDetail(actorId: string, preview?: boolean) {
+  return preview ? { preview: true, adminId: actorId } : undefined;
 }
 
 function addAudit(
@@ -155,7 +186,7 @@ function addAudit(
     .run();
 }
 
-function storeFiles(tx: AppDb, orderId: string, actorId: string, files: IncomingFile[]) {
+function storeFiles(tx: AppDb, orderId: string, actorId: string, files: IncomingFile[], preview?: boolean) {
   const written: string[] = [];
   try {
     for (const file of files) {
@@ -177,7 +208,11 @@ function storeFiles(tx: AppDb, orderId: string, actorId: string, files: Incoming
         orderId,
         actorId,
         action: "attachment.added",
-        summary: file.kind === "order_proof" ? `上傳訂單截圖：${file.fileName}` : `上傳運費收據：${file.fileName}`,
+        summary: previewSummary(
+          file.kind === "order_proof" ? `上傳訂單截圖：${file.fileName}` : `上傳運費收據：${file.fileName}`,
+          preview,
+        ),
+        detail: previewDetail(actorId, preview),
       });
     }
   } catch (error) {
@@ -191,6 +226,7 @@ export function createOrder(
   actorId: string,
   input: OrderInput,
   files: IncomingFile[],
+  options?: { preview?: boolean },
 ): { ok: true; id: string } | { ok: false; message: string } {
   const id = crypto.randomUUID();
   const now = nowIso();
@@ -216,9 +252,13 @@ export function createOrder(
         orderId: id,
         actorId,
         action: "order.created",
-        summary: `建立訂單：${input.productName}（${formatMoney(input.orderAmount, input.orderCurrency)}）`,
+        summary: previewSummary(
+          `建立訂單：${input.productName}（${formatMoney(input.orderAmount, input.orderCurrency)}）`,
+          options?.preview,
+        ),
+        detail: previewDetail(actorId, options?.preview),
       });
-      storeFiles(tx, id, actorId, files);
+      storeFiles(tx, id, actorId, files, options?.preview);
     });
   } catch (error) {
     console.error(error);
@@ -233,6 +273,7 @@ export function updateOrder(
   orderId: string,
   input: OrderInput,
   files: IncomingFile[],
+  options?: { preview?: boolean },
 ): { ok: true } | { ok: false; message: string } {
   const current = db.select().from(orders).where(eq(orders.id, orderId)).get();
   if (!current) return { ok: false, message: "找不到訂單" };
@@ -254,10 +295,11 @@ export function updateOrder(
           orderId,
           actorId,
           action: "order.updated",
-          summary: `更新了：${changed.map((key) => FIELD_LABELS[key]).join("、")}`,
+          summary: previewSummary(`更新了：${changed.map((key) => FIELD_LABELS[key]).join("、")}`, options?.preview),
+          detail: previewDetail(actorId, options?.preview),
         });
       }
-      storeFiles(tx, orderId, actorId, files);
+      storeFiles(tx, orderId, actorId, files, options?.preview);
     });
   } catch (error) {
     console.error(error);
@@ -277,13 +319,18 @@ export function deleteAttachment(
   if (!order) return { ok: false, code: "not_found" };
   if (actor.role === "helper" && order.helperId !== actor.id) return { ok: false, code: "forbidden" };
   if (actor.role === "pending") return { ok: false, code: "forbidden" };
+  if (order.helperId === PREVIEW_HELPER_ID && actor.id !== PREVIEW_HELPER_ID && !actor.preview) {
+    return { ok: false, code: "forbidden" };
+  }
   db.delete(attachments).where(eq(attachments.id, attachmentId)).run();
   removeUpload(attachmentId);
+  const actorId = actor.actorId ?? actor.id;
   addAudit(db, {
     orderId: order.id,
-    actorId: actor.id,
+    actorId,
     action: "attachment.deleted",
-    summary: `刪除了附件：${attachment.fileName}`,
+    summary: previewSummary(`刪除了附件：${attachment.fileName}`, actor.preview),
+    detail: previewDetail(actorId, actor.preview),
   });
   db.update(orders).set({ updatedAt: nowIso() }).where(eq(orders.id, order.id)).run();
   return { ok: true, orderId: order.id };
@@ -308,9 +355,10 @@ export function changeStatus(
     shippingReimbursed: boolean;
   },
 ): { ok: true; code: string } | { ok: false; code: string } {
-  if (actor.role !== "admin") return { ok: false, code: "forbidden" };
+  if (actor.role !== "admin" || actor.preview) return { ok: false, code: "forbidden" };
   const current = db.select().from(orders).where(eq(orders.id, orderId)).get();
   if (!current) return { ok: false, code: "not_found" };
+  if (current.helperId === PREVIEW_HELPER_ID) return { ok: false, code: "forbidden" };
   if (input.shippingReimbursed && current.shippingCost == null) return { ok: false, code: "need_shipping" };
 
   const paidAt = input.paid ? input.paidAt ?? todayTaipei() : null;

@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { DEMO_USERS } from "@/lib/demo-users";
 import { makeReceiptPng } from "@/lib/png";
 import { writeUpload } from "@/lib/uploads";
@@ -13,6 +14,7 @@ function userRow(id: string, displayName: string, role: "admin" | "helper" | "pe
     displayName,
     pictureUrl: null,
     role,
+    previewSandbox: false,
     createdAt: STAMP,
     updatedAt: STAMP,
   };
@@ -246,7 +248,7 @@ export function insertDemoData(db: AppDb) {
 }
 
 export function insertDemoDataIfEmpty(db: AppDb) {
-  const existing = db.select({ id: users.id }).from(users).limit(1).all();
+  const existing = db.select({ id: users.id }).from(users).where(eq(users.previewSandbox, false)).limit(1).all();
   if (existing.length > 0) return false;
   insertDemoData(db);
   return true;

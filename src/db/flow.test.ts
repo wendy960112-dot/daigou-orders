@@ -1,12 +1,15 @@
 import os from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { openAppDatabase } from "./index";
-import { changeStatus, createOrder, deleteAttachment, getOrder, listAttachments, listAudit, listOrders, listSummaryOrders } from "./orders";
-import { insertDemoData } from "./seed-data";
-import { setUserRole, upsertLineUser } from "./users";
-import { readUpload } from "@/lib/uploads";
+import { eq } from "drizzle-orm";
+import { PREVIEW_HELPER_ID } from "@/lib/preview";
 import { sumRows, summarize } from "@/lib/summary";
+import { readUpload } from "@/lib/uploads";
+import { openAppDatabase } from "./index";
+import { changeStatus, createOrder, deleteAttachment, getOrder, listAttachments, listAudit, listOrders, listSummaryOrders, resetPreviewOrders } from "./orders";
+import { auditLogs } from "./schema";
+import { insertDemoData } from "./seed-data";
+import { listHelpers, setUserRole, upsertLineUser } from "./users";
 
 let uploadDir = "";
 
@@ -125,6 +128,87 @@ describe("demo orders", () => {
       shippingReimbursed: true,
     });
     expect(blocked).toEqual({ ok: false, code: "need_shipping" });
+  });
+});
+
+describe("preview sandbox", () => {
+  it("keeps preview orders out of admin lists and summaries, and reset deletes them", () => {
+    const db = demoDb();
+    const created = createOrder(
+      db,
+      "user_wendy",
+      {
+        helperId: PREVIEW_HELPER_ID,
+        productName: "預覽餅乾",
+        productLinks: "https://example.com/preview",
+        quantity: 1,
+        orderAmount: 9999,
+        orderCurrency: "JPY",
+        orderDate: "2026-10-16",
+        expectedArrivalDate: null,
+        carrier: "Yamato",
+        trackingNumber: "PREVIEW1",
+        shipDate: "2026-10-17",
+        shippingCost: 400,
+        shippingCurrency: "JPY",
+        notes: "練習用",
+      },
+      [{ kind: "order_proof", fileName: "proof.png", mimeType: "image/png", buffer: Buffer.from("preview-bytes") }],
+      { preview: true },
+    );
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const admin = listOrders(db, { id: "user_wendy", role: "admin" }, { month: "2026-10" });
+    const preview = listOrders(db, { id: PREVIEW_HELPER_ID, role: "helper", preview: true }, { month: "2026-10" });
+    expect(admin.some((order) => order.id === created.id)).toBe(false);
+    expect(preview.some((order) => order.id === created.id)).toBe(true);
+
+    const totals = sumRows(summarize(listSummaryOrders(db)));
+    expect(totals.goodsOwed).toEqual({ JPY: 1620, TWD: 890 });
+    expect(totals.goodsPaid).toEqual({ JPY: 12280, TWD: 1450 });
+    const sandbox = sumRows(summarize(listSummaryOrders(db, PREVIEW_HELPER_ID)));
+    expect(sandbox.goodsOwed).toEqual({ JPY: 9999, TWD: 0 });
+    expect(sandbox.shippingOwed).toEqual({ JPY: 400, TWD: 0 });
+
+    const audit = db.select().from(auditLogs).where(eq(auditLogs.orderId, created.id)).all();
+    expect(audit.every((entry) => entry.summary.startsWith("（小幫手視角）"))).toBe(true);
+    expect(audit.every((entry) => entry.actorId === "user_wendy")).toBe(true);
+    expect(audit.map((entry) => JSON.parse(entry.detail ?? "{}"))).toEqual(
+      audit.map(() => ({ preview: true, adminId: "user_wendy" })),
+    );
+
+    expect(
+      changeStatus(db, { id: "user_wendy", role: "admin", preview: true }, created.id, {
+        paid: true,
+        paidAt: "2026-10-16",
+        paidAmount: 9999,
+        paidCurrency: "JPY",
+        goodsReceived: false,
+        shippingReimbursed: false,
+      }),
+    ).toEqual({ ok: false, code: "forbidden" });
+
+    const attachmentId = listAttachments(db, created.id)[0]?.id;
+    expect(attachmentId).toBeTruthy();
+    expect(readUpload(attachmentId!)?.equals(Buffer.from("preview-bytes"))).toBe(true);
+    expect(deleteAttachment(db, { id: "user_wendy", role: "admin" }, attachmentId!).ok).toBe(false);
+
+    const reset = resetPreviewOrders(db);
+    expect(reset.removed).toBe(1);
+    expect(getOrder(db, created.id)).toBeNull();
+    expect(readUpload(attachmentId!)).toBeNull();
+    expect(listAudit(db, created.id)).toEqual([]);
+    expect(sumRows(summarize(listSummaryOrders(db))).goodsOwed).toEqual({ JPY: 1620, TWD: 890 });
+  });
+
+  it("hides the preview helper from management and refuses role changes", () => {
+    const db = demoDb();
+    expect(listHelpers(db).some((user) => user.id === PREVIEW_HELPER_ID)).toBe(false);
+    expect(setUserRole(db, { id: "user_wendy", role: "admin" }, PREVIEW_HELPER_ID, "pending")).toEqual({
+      ok: false,
+      code: "preview",
+    });
   });
 });
 

@@ -68,14 +68,15 @@ export async function saveOrder(_prev: ActionState, formData: FormData): Promise
 
   const input = { ...parsed.data, helperId };
   const files = [...proofs.files, ...receipts.files];
+  const writeOptions = { preview: user.previewing };
   if (orderId) {
-    const result = updateOrder(db, user.id, orderId, input, files);
+    const result = updateOrder(db, user.actorId, orderId, input, files, writeOptions);
     if (!result.ok) return { ok: false, message: result.message };
     refresh(orderId);
     redirect(`/orders/${orderId}?notice=saved`);
   }
 
-  const created = createOrder(db, user.id, input, files);
+  const created = createOrder(db, user.actorId, input, files, writeOptions);
   if (!created.ok) return { ok: false, message: created.message };
   refresh(created.id);
   redirect(`/orders/${created.id}?notice=saved`);
@@ -94,7 +95,12 @@ export async function updateStatus(formData: FormData) {
   const parsed = parsePaidFields(formData);
   if (!parsed.ok) redirect(`/orders/${orderId}?notice=invalid`);
 
-  const result = changeStatus(db, user, orderId, parsed.data);
+  const result = changeStatus(
+    db,
+    { id: user.id, role: user.role, actorId: user.actorId, preview: user.previewing },
+    orderId,
+    parsed.data,
+  );
   refresh(orderId);
   redirect(`/orders/${orderId}?notice=${result.ok ? result.code : result.code}`);
 }
@@ -103,7 +109,11 @@ export async function removeAttachment(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const attachmentId = String(formData.get("attachmentId") ?? "");
-  const result = deleteAttachment(getDb(), user, attachmentId);
+  const result = deleteAttachment(
+    getDb(),
+    { id: user.id, role: user.role, actorId: user.actorId, preview: user.previewing },
+    attachmentId,
+  );
   if (!result.ok) redirect(`/?notice=${result.code}`);
   refresh(result.orderId);
   redirect(`/orders/${result.orderId}?notice=deleted`);
