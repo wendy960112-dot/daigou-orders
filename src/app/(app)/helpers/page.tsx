@@ -3,7 +3,7 @@ import { issuePasswordReset, updateHelperRole } from "@/actions/admin";
 import { getDb } from "@/db";
 import { listUsers } from "@/db/users";
 import { Notice } from "@/components/notice";
-import { cardClass, secondaryButtonClass } from "@/components/styles";
+import { cardClass, inputClass, secondaryButtonClass } from "@/components/styles";
 import { roleLabel } from "@/lib/auth-policy";
 import { requireUser } from "@/lib/current-user";
 import { loginMethodLabel, resetUrl } from "@/lib/email";
@@ -46,10 +46,14 @@ export default async function HelpersPage({
       {resetToken ? (
         <section className={`${cardClass} space-y-2`}>
           <h2 className="text-base font-semibold">一次性重設連結{resetPerson ? `：${resetPerson.displayName}` : ""}</h2>
-          <p className="text-sm leading-6 text-muted">一個小時內有效，用過就失效。請用 LINE 傳給對方，不要貼到公開的地方。</p>
-          <p className="break-all text-sm font-medium">{resetUrl(resetToken)}</p>
-          <p className="text-xs text-muted">代碼</p>
-          <p className="break-all text-sm">{resetToken}</p>
+          <p className="text-sm leading-6 text-muted">一個小時內有效，用過就失效。請點下面的連結，或把網址、代碼用 LINE 傳給對方。不要貼到公開的地方。</p>
+          <a href={resetUrl(resetToken)} className="block break-all text-sm font-medium text-sea underline">
+            {resetUrl(resetToken)}
+          </a>
+          <label className="block text-xs text-muted">
+            代碼
+            <input readOnly value={resetToken} aria-label="重設代碼" className={inputClass} />
+          </label>
         </section>
       ) : null}
       {pending.length === 0 ? <p className="text-sm text-muted">目前沒有人在等核准。</p> : null}
