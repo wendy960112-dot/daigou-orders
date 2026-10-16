@@ -13,6 +13,8 @@ import {
   fulfillOrder,
   getOrder,
   listAttachments,
+  restoreOrder as restoreOrderRow,
+  softDeleteOrder,
 } from "@/db/orders";
 import { getProductOption } from "@/db/products";
 import { listHelpers } from "@/db/users";
@@ -137,6 +139,26 @@ export async function updateStatus(_prev: ActionState, formData: FormData): Prom
   refresh(orderId);
   const notice = files.length > 0 && result.code === "status_same" ? "proofs" : result.code;
   redirect(`/orders/${orderId}?notice=${notice}`);
+}
+
+export async function removeOrder(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  const orderId = String(formData.get("orderId") ?? "");
+  const result = softDeleteOrder(getDb(), user, orderId);
+  if (!result.ok) redirect(isSafeId(orderId) ? `/orders/${orderId}?notice=${result.code}` : `/?notice=${result.code}`);
+  refresh(orderId);
+  redirect(`/orders/deleted?notice=${result.code}`);
+}
+
+export async function restoreOrder(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  const orderId = String(formData.get("orderId") ?? "");
+  const result = restoreOrderRow(getDb(), user, orderId);
+  if (!result.ok) redirect(isSafeId(orderId) ? `/orders/${orderId}?notice=${result.code}` : `/?notice=${result.code}`);
+  refresh(orderId);
+  redirect(`/orders/${orderId}?notice=${result.code}`);
 }
 
 export async function removeAttachment(formData: FormData) {
