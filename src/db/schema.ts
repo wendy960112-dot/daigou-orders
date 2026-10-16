@@ -3,6 +3,8 @@ import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   lineUserId: text("line_user_id").unique(),
+  email: text("email").unique(),
+  passwordHash: text("password_hash"),
   displayName: text("display_name").notNull(),
   pictureUrl: text("picture_url"),
   role: text("role", { enum: ["admin", "helper", "pending"] }).notNull(),
@@ -81,6 +83,31 @@ export const auditLogs = sqliteTable(
     createdAt: text("created_at").notNull(),
   },
   (table) => [index("audit_order_idx").on(table.orderId)],
+);
+
+export const passwordResets = sqliteTable(
+  "password_resets",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    usedAt: text("used_at"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("password_resets_user_idx").on(table.userId)],
+);
+
+export const loginAttempts = sqliteTable(
+  "login_attempts",
+  {
+    id: text("id").primaryKey(),
+    email: text("email").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("login_attempts_email_idx").on(table.email, table.createdAt)],
 );
 
 export type User = typeof users.$inferSelect;

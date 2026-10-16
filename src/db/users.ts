@@ -52,6 +52,8 @@ export function upsertLineUser(
   const created: User = {
     id: crypto.randomUUID(),
     lineUserId: profile.lineUserId,
+    email: null,
+    passwordHash: null,
     displayName: profile.displayName,
     pictureUrl: profile.pictureUrl,
     role,

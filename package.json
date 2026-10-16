@@ -23,6 +23,7 @@
     "eslint-config-next": "15.5.28",
     "jose": "^6.1.0",
     "next": "15.5.28",
+    "nodemailer": "^10.1.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "tailwindcss": "^4",

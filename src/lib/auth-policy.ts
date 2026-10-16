@@ -16,6 +16,13 @@ export function adminLineIds() {
     .filter(Boolean);
 }
 
+export function adminEmails() {
+  return (process.env.ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 export function canViewOrder(viewer: Viewer, order: { helperId: string }) {
   if (viewer.role === "admin") return true;
   if (viewer.role === "helper") return viewer.id === order.helperId;

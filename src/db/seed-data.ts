@@ -10,6 +10,8 @@ function userRow(id: string, displayName: string, role: "admin" | "helper" | "pe
   return {
     id,
     lineUserId: null,
+    email: null,
+    passwordHash: null,
     displayName,
     pictureUrl: null,
     role,
