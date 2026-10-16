@@ -69,10 +69,17 @@ function taskWhere(task: TaskStatus | null) {
 export function listOrders(
   db: AppDb,
   viewer: Viewer,
-  filter: { helperId?: string | null; month?: string | null; status?: StatusFilter | null; task?: TaskStatus | null },
+  filter: {
+    helperId?: string | null;
+    month?: string | null;
+    status?: StatusFilter | null;
+    task?: TaskStatus | null;
+    includeDeleted?: boolean;
+  },
 ): OrderListItem[] {
   if (viewer.role === "pending") return [];
-  const conditions = [];
+  if (filter.includeDeleted && viewer.role !== "admin") return [];
+  const conditions = [filter.includeDeleted ? isNotNull(orders.deletedAt) : isNull(orders.deletedAt)];
   if (viewer.role === "helper") conditions.push(eq(orders.helperId, viewer.id));
   else if (filter.helperId) conditions.push(eq(orders.helperId, filter.helperId));
   if (filter.month) {
@@ -90,14 +97,15 @@ export function listOrders(
     .innerJoin(users, eq(orders.helperId, users.id));
   const filtered = conditions.length > 0 ? query.where(and(...conditions)) : query;
   return filtered
-    .orderBy(desc(listedOn), desc(orders.createdAt))
+    .orderBy(filter.includeDeleted ? desc(orders.deletedAt) : desc(listedOn), desc(orders.createdAt))
     .all()
     .map((row) => ({ ...row.order, helperName: row.helperName }));
 }
 
 export function listMonths(db: AppDb, helperId: string | null) {
+  const visible = isNull(orders.deletedAt);
   const query = db.select({ listedOn: sql<string | null>`coalesce(${orders.orderDate}, ${orders.dispatchedOn})` }).from(orders);
-  const rows = helperId ? query.where(eq(orders.helperId, helperId)).all() : query.all();
+  const rows = query.where(helperId ? and(visible, eq(orders.helperId, helperId)) : visible).all();
   return [...new Set(rows.map((row) => row.listedOn?.slice(0, 7)).filter((month): month is string => Boolean(month)))].sort(
     (a, b) => b.localeCompare(a),
   );
@@ -108,7 +116,7 @@ export function countInbox(db: AppDb, helperId: string) {
     db
       .select({ value: count() })
       .from(orders)
-      .where(and(eq(orders.helperId, helperId), eq(orders.taskStatus, "pending")))
+      .where(and(eq(orders.helperId, helperId), eq(orders.taskStatus, "pending"), isNull(orders.deletedAt)))
       .get()?.value ?? 0
   );
 }
@@ -173,7 +181,8 @@ export function listSummaryOrders(db: AppDb, helperId?: string | null): SummaryO
     })
     .from(orders)
     .innerJoin(users, eq(orders.helperId, users.id));
-  return (helperId ? query.where(eq(orders.helperId, helperId)) : query)
+  const visible = isNull(orders.deletedAt);
+  return query.where(helperId ? and(visible, eq(orders.helperId, helperId)) : visible)
     .all()
     .flatMap((row) => {
       if (row.orderAmount == null || row.orderCurrency == null || row.orderDate == null) return [];
@@ -327,6 +336,7 @@ export function deleteAttachment(
   if (!attachment) return { ok: false, code: "not_found" };
   const order = getOrder(db, attachment.orderId);
   if (!order) return { ok: false, code: "not_found" };
+  if (order.deletedAt && actor.role !== "admin") return { ok: false, code: "not_found" };
   if (actor.role === "helper" && order.helperId !== actor.id) return { ok: false, code: "forbidden" };
   if (actor.role === "pending") return { ok: false, code: "forbidden" };
   if ((attachment.kind === "payment_proof" || attachment.kind === "reimbursement_proof") && actor.role !== "admin") {
@@ -365,7 +375,7 @@ export function changeStatus(
 ): { ok: true; code: string } | { ok: false; code: string } {
   if (actor.role !== "admin") return { ok: false, code: "forbidden" };
   const current = db.select().from(orders).where(eq(orders.id, orderId)).get();
-  if (!current) return { ok: false, code: "not_found" };
+  if (!current || current.deletedAt) return { ok: false, code: current ? "deleted_locked" : "not_found" };
   if (input.paid && (current.orderAmount == null || current.orderCurrency == null)) return { ok: false, code: "need_amount" };
   if (input.shippingReimbursed && current.shippingCost == null) return { ok: false, code: "need_shipping" };
 
@@ -495,7 +505,7 @@ export function acceptTask(db: AppDb, actor: Viewer, orderId: string) {
   if (actor.role !== "helper") return { ok: false as const, code: "forbidden" };
   if (!isSafeId(orderId)) return { ok: false as const, code: "not_found" };
   const current = db.select().from(orders).where(eq(orders.id, orderId)).get();
-  if (!current || current.helperId !== actor.id) return { ok: false as const, code: "not_found" };
+  if (!current || current.helperId !== actor.id || current.deletedAt) return { ok: false as const, code: "not_found" };
   if (current.taskStatus !== "pending") return { ok: false as const, code: "not_pending" };
   db.transaction((tx) => {
     tx.update(orders).set({ taskStatus: "accepted", updatedAt: nowIso() }).where(eq(orders.id, orderId)).run();
@@ -527,7 +537,7 @@ export function fulfillOrder(
 ): { ok: true } | { ok: false; message: string } {
   if (actor.role !== "helper") return { ok: false, message: "只有小幫手可以回報下單。" };
   const current = db.select().from(orders).where(eq(orders.id, orderId)).get();
-  if (!current || current.helperId !== actor.id) return { ok: false, message: "找不到訂單" };
+  if (!current || current.helperId !== actor.id || current.deletedAt) return { ok: false, message: "找不到訂單" };
   if (current.taskStatus === "pending") return { ok: false, message: "請先接下這張單。" };
 
   const nextStatus: TaskStatus = input.shipDate || input.trackingNumber || input.carrier ? "shipped" : "ordered";
@@ -586,7 +596,8 @@ export function addAttachments(
   files: IncomingFile[],
 ): { ok: true } | { ok: false; message: string } {
   if (actor.role !== "admin") return { ok: false, message: "只有管理員可以上傳這份截圖。" };
-  if (!getOrder(db, orderId)) return { ok: false, message: "找不到訂單" };
+  const order = getOrder(db, orderId);
+  if (!order || order.deletedAt) return { ok: false, message: order ? "這張任務已刪除，請先還原。" : "找不到訂單" };
   if (files.length === 0) return { ok: true };
   try {
     db.transaction((tx) => {
@@ -598,6 +609,54 @@ export function addAttachments(
     return { ok: false, message: "截圖沒有上傳成功，請再試一次。" };
   }
   return { ok: true };
+}
+
+function moneyFlags(order: { paid: boolean; shippingReimbursed: boolean }) {
+  return [order.paid ? "已匯款" : "", order.shippingReimbursed ? "運費已報銷" : ""].filter(Boolean);
+}
+
+export function softDeleteOrder(db: AppDb, actor: Viewer, orderId: string) {
+  if (actor.role !== "admin") return { ok: false as const, code: "forbidden" };
+  if (!isSafeId(orderId)) return { ok: false as const, code: "not_found" };
+  const current = db.select().from(orders).where(eq(orders.id, orderId)).get();
+  if (!current) return { ok: false as const, code: "not_found" };
+  if (current.deletedAt) return { ok: true as const, code: "deleted_order" as const };
+  const flags = moneyFlags(current);
+  const note = flags.length > 0 ? `（${flags.join("、")}）` : "";
+  db.transaction((tx) => {
+    tx.update(orders)
+      .set({ deletedAt: nowIso(), deletedBy: actor.id, updatedAt: nowIso() })
+      .where(eq(orders.id, orderId))
+      .run();
+    addAudit(tx, {
+      orderId,
+      actorId: actor.id,
+      action: "order.deleted",
+      summary: `刪除任務：${current.productName}${note}`,
+    });
+  });
+  return { ok: true as const, code: "deleted_order" as const };
+}
+
+export function restoreOrder(db: AppDb, actor: Viewer, orderId: string) {
+  if (actor.role !== "admin") return { ok: false as const, code: "forbidden" };
+  if (!isSafeId(orderId)) return { ok: false as const, code: "not_found" };
+  const current = db.select().from(orders).where(eq(orders.id, orderId)).get();
+  if (!current) return { ok: false as const, code: "not_found" };
+  if (!current.deletedAt) return { ok: true as const, code: "restored" as const };
+  db.transaction((tx) => {
+    tx.update(orders)
+      .set({ deletedAt: null, deletedBy: null, updatedAt: nowIso() })
+      .where(eq(orders.id, orderId))
+      .run();
+    addAudit(tx, {
+      orderId,
+      actorId: actor.id,
+      action: "order.restored",
+      summary: `還原任務：${current.productName}`,
+    });
+  });
+  return { ok: true as const, code: "restored" as const };
 }
 
 export function countKind(rows: Attachment[], kind: Attachment["kind"]) {

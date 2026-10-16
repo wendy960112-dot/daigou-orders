@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { acceptTask } from "@/actions/orders";
+import { acceptTask, restoreOrder } from "@/actions/orders";
 import { AttachmentGallery } from "@/components/attachments";
+import { DeleteOrderButton } from "@/components/delete-order-button";
 import { Notice } from "@/components/notice";
 import { FulfillForm } from "@/components/order-form";
 import { StatusForm } from "@/components/status-form";
 import { StatusBadges, TaskBadge } from "@/components/status-badges";
-import { cardClass, primaryButtonClass } from "@/components/styles";
+import { cardClass, primaryButtonClass, secondaryButtonClass } from "@/components/styles";
 import { getDb } from "@/db";
 import { getOrder, listAttachments, listAudit } from "@/db/orders";
 import { getProductOption, listProductOptions } from "@/db/products";
@@ -66,10 +67,21 @@ export default async function OrderPage({
 
   return (
     <div className="space-y-4">
-      <Link href="/" className="text-sm font-medium text-sea">
-        ← 回訂單列表
+      <Link href={order.deletedAt ? "/orders/deleted" : "/"} className="text-sm font-medium text-sea">
+        {order.deletedAt ? "← 回已刪除" : "← 回訂單列表"}
       </Link>
       <Notice code={one(query.notice)} />
+      {order.deletedAt ? (
+        <div className="space-y-3 rounded-2xl bg-warn-soft px-4 py-3">
+          <p className="text-sm leading-6 text-warn">這張任務已刪除，列表、彙總和小幫手都看不到。截圖還在。</p>
+          <form action={restoreOrder}>
+            <input type="hidden" name="orderId" value={order.id} />
+            <button type="submit" className={`${secondaryButtonClass} w-full`}>
+              還原
+            </button>
+          </form>
+        </div>
+      ) : null}
       <header className="space-y-2">
         <p className="text-xs text-muted">
           {listed ? formatDate(listed) : "日期未填"}
@@ -88,6 +100,14 @@ export default async function OrderPage({
             shippingReimbursed={order.shippingReimbursed}
           />
         </div>
+        {user.role === "admin" && !order.deletedAt ? (
+          <DeleteOrderButton
+            orderId={order.id}
+            productName={order.productName}
+            paid={order.paid}
+            shippingReimbursed={order.shippingReimbursed}
+          />
+        ) : null}
       </header>
 
       <section className={`${cardClass} space-y-2`}>
@@ -146,7 +166,7 @@ export default async function OrderPage({
         </form>
       ) : null}
 
-      {user.role === "admin" ? (
+      {user.role === "admin" && !order.deletedAt ? (
         <StatusForm
           orderId={order.id}
           canPay={canPay}

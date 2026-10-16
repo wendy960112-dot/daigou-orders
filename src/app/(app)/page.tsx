@@ -48,7 +48,14 @@ export default async function OrdersPage({
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold">{user.role === "admin" ? "全部任務" : "我的任務"}</h1>
+        <div className="flex items-baseline justify-between gap-3">
+          <h1 className="text-2xl font-bold">{user.role === "admin" ? "全部任務" : "我的任務"}</h1>
+          {user.role === "admin" ? (
+            <Link href="/orders/deleted" className="text-sm font-medium text-sea">
+              已刪除
+            </Link>
+          ) : null}
+        </div>
         <p className="mt-1 text-sm text-muted">
           {filters.month ? formatMonth(filters.month) : "全部月份"} · {orders.length} 筆
         </p>

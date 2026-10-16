@@ -11,7 +11,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   if (user.role === "pending" && path !== "/pending") redirect("/pending");
   if (user.role !== "pending" && path === "/pending") redirect("/");
-  if (user.role !== "admin" && (path.startsWith("/summary") || path.startsWith("/helpers") || path.startsWith("/settings"))) {
+  if (user.role !== "admin" && (path.startsWith("/summary") || path.startsWith("/helpers") || path.startsWith("/settings") || path.startsWith("/orders/deleted"))) {
     redirect("/");
   }
   if (user.role !== "admin" && path === "/orders/new") redirect(user.role === "helper" ? "/inbox" : "/");

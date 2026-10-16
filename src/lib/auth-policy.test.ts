@@ -43,5 +43,7 @@ describe("order access", () => {
     expect(canViewOrder({ id: "user_lin", role: "pending" }, order)).toBe(false);
     expect(canManageStatus({ id: "user_wendy", role: "admin" })).toBe(true);
     expect(canManageStatus({ id: "user_mei", role: "helper" })).toBe(false);
+    expect(canViewOrder({ id: "user_mei", role: "helper" }, { ...order, deletedAt: "2026-10-16T00:00:00.000Z" })).toBe(false);
+    expect(canViewOrder({ id: "user_wendy", role: "admin" }, { ...order, deletedAt: "2026-10-16T00:00:00.000Z" })).toBe(true);
   });
 });

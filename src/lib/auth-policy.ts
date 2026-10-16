@@ -23,7 +23,8 @@ export function adminEmails() {
     .filter(Boolean);
 }
 
-export function canViewOrder(viewer: Viewer, order: { helperId: string }) {
+export function canViewOrder(viewer: Viewer, order: { helperId: string; deletedAt?: string | null }) {
+  if (order.deletedAt && viewer.role !== "admin") return false;
   if (viewer.role === "admin") return true;
   if (viewer.role === "helper") return viewer.id === order.helperId;
   return false;
