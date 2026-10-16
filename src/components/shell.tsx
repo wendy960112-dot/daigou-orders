@@ -2,7 +2,15 @@ import { roleLabel } from "@/lib/auth-policy";
 import type { User } from "@/db/schema";
 import { BottomNav } from "./bottom-nav";
 
-export function Shell({ user, children }: { user: User; children: React.ReactNode }) {
+export function Shell({
+  user,
+  inboxCount = 0,
+  children,
+}: {
+  user: User;
+  inboxCount?: number;
+  children: React.ReactNode;
+}) {
   return (
     <>
       <header className="sticky top-0 z-20 border-b border-line bg-paper/95 backdrop-blur">
@@ -37,7 +45,7 @@ export function Shell({ user, children }: { user: User; children: React.ReactNod
         </div>
       </header>
       <main className="mx-auto w-full max-w-3xl px-4 pb-28 pt-4">{children}</main>
-      <BottomNav role={user.role} />
+      <BottomNav role={user.role} inboxCount={inboxCount} />
     </>
   );
 }

@@ -1,3 +1,18 @@
+import { taskStatusLabel, type TaskStatus } from "@/lib/tasks";
+
+const TASK_TONE: Record<TaskStatus, string> = {
+  pending: "bg-warn-soft text-warn",
+  accepted: "bg-sea-soft text-sea",
+  ordered: "bg-brand-soft text-brand",
+  shipped: "bg-good-soft text-good",
+};
+
+export function TaskBadge({ status }: { status: TaskStatus }) {
+  return (
+    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${TASK_TONE[status]}`}>{taskStatusLabel(status)}</span>
+  );
+}
+
 export function StatusBadges({
   paid,
   goodsReceived,
