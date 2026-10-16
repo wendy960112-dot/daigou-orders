@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { DEMO_USERS } from "@/lib/demo-users";
 import { makeReceiptPng } from "@/lib/png";
 import { writeUpload } from "@/lib/uploads";
@@ -244,6 +245,64 @@ export function insertDemoData(db: AppDb) {
         createdAt: "2026-10-10T04:00:00.000Z",
       },
     ])
+    .run();
+
+  db.run(sql`
+    UPDATE orders
+    SET dispatched_on = order_date,
+        task_status = CASE
+          WHEN ship_date IS NOT NULL OR tracking_number IS NOT NULL OR carrier IS NOT NULL THEN 'shipped'
+          ELSE 'ordered'
+        END
+    WHERE task_status IS NULL
+  `);
+
+  db.insert(orders)
+    .values({
+      id: "order_mei_task",
+      helperId: mei.id,
+      productOptionId: "product_marukyu",
+      productName: "丸久小山園",
+      productLinks: "https://www.marukyu-koyamaen.co.jp/",
+      purchaseNote: "請買特撰抹茶 100g 兩罐，選罐裝。這是示範任務，連結不是真的下單頁。",
+      quantity: null,
+      orderAmount: null,
+      orderCurrency: null,
+      orderDate: null,
+      dispatchedOn: "2026-10-16",
+      expectedArrivalDate: null,
+      deliveryMethod: "ship_address",
+      deliveryAddress: "台北市大安區示範路 1 號",
+      taskStatus: "pending",
+      carrier: null,
+      trackingNumber: null,
+      shipDate: null,
+      shippingCost: null,
+      shippingCurrency: null,
+      notes: null,
+      paid: false,
+      paidAt: null,
+      paidAmount: null,
+      paidCurrency: null,
+      goodsReceived: false,
+      goodsReceivedAt: null,
+      shippingReimbursed: false,
+      shippingReimbursedAt: null,
+      createdAt: "2026-10-16T01:00:00.000Z",
+      updatedAt: "2026-10-16T01:00:00.000Z",
+    })
+    .run();
+
+  db.insert(auditLogs)
+    .values({
+      id: "audit_mei_task_dispatch",
+      orderId: "order_mei_task",
+      actorId: wendy.id,
+      action: "task.dispatched",
+      summary: "派發任務：丸久小山園",
+      detail: null,
+      createdAt: "2026-10-16T01:00:00.000Z",
+    })
     .run();
 }
 

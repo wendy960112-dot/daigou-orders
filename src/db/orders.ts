@@ -1,6 +1,7 @@
-import { and, asc, desc, eq, gte, isNotNull, lte } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { formatMoney, isSafeId, nowIso, todayTaipei } from "@/lib/format";
 import type { SummaryOrder } from "@/lib/summary";
+import type { DeliveryMethod, TaskStatus } from "@/lib/tasks";
 import type { Currency, OrderInput, Viewer } from "@/lib/types";
 import type { IncomingFile } from "@/lib/uploads";
 import { removeUpload, writeUpload } from "@/lib/uploads";
@@ -46,21 +47,42 @@ function statusWhere(status: StatusFilter | null) {
   return undefined;
 }
 
+const listedOn = sql<string>`coalesce(${orders.orderDate}, ${orders.dispatchedOn})`;
+
+function taskWhere(task: TaskStatus | null) {
+  if (task === "pending" || task === "accepted") return eq(orders.taskStatus, task);
+  if (task === "ordered") {
+    return or(
+      eq(orders.taskStatus, "ordered"),
+      and(isNull(orders.taskStatus), isNull(orders.shipDate), isNull(orders.trackingNumber), isNull(orders.carrier)),
+    );
+  }
+  if (task === "shipped") {
+    return or(
+      eq(orders.taskStatus, "shipped"),
+      and(isNull(orders.taskStatus), or(isNotNull(orders.shipDate), isNotNull(orders.trackingNumber), isNotNull(orders.carrier))),
+    );
+  }
+  return undefined;
+}
+
 export function listOrders(
   db: AppDb,
   viewer: Viewer,
-  filter: { helperId?: string | null; month?: string | null; status?: StatusFilter | null },
+  filter: { helperId?: string | null; month?: string | null; status?: StatusFilter | null; task?: TaskStatus | null },
 ): OrderListItem[] {
   if (viewer.role === "pending") return [];
   const conditions = [];
   if (viewer.role === "helper") conditions.push(eq(orders.helperId, viewer.id));
   else if (filter.helperId) conditions.push(eq(orders.helperId, filter.helperId));
   if (filter.month) {
-    conditions.push(gte(orders.orderDate, `${filter.month}-01`));
-    conditions.push(lte(orders.orderDate, `${filter.month}-31`));
+    conditions.push(gte(listedOn, `${filter.month}-01`));
+    conditions.push(lte(listedOn, `${filter.month}-31`));
   }
   const status = statusWhere(filter.status ?? null);
   if (status) conditions.push(status);
+  const task = taskWhere(filter.task ?? null);
+  if (task) conditions.push(task);
 
   const query = db
     .select({ order: orders, helperName: users.displayName })
@@ -68,15 +90,31 @@ export function listOrders(
     .innerJoin(users, eq(orders.helperId, users.id));
   const filtered = conditions.length > 0 ? query.where(and(...conditions)) : query;
   return filtered
-    .orderBy(desc(orders.orderDate), desc(orders.createdAt))
+    .orderBy(desc(listedOn), desc(orders.createdAt))
     .all()
     .map((row) => ({ ...row.order, helperName: row.helperName }));
 }
 
 export function listMonths(db: AppDb, helperId: string | null) {
-  const query = db.select({ orderDate: orders.orderDate }).from(orders);
+  const query = db.select({ listedOn: sql<string | null>`coalesce(${orders.orderDate}, ${orders.dispatchedOn})` }).from(orders);
   const rows = helperId ? query.where(eq(orders.helperId, helperId)).all() : query.all();
-  return [...new Set(rows.map((row) => row.orderDate.slice(0, 7)))].sort((a, b) => b.localeCompare(a));
+  return [...new Set(rows.map((row) => row.listedOn?.slice(0, 7)).filter((month): month is string => Boolean(month)))].sort(
+    (a, b) => b.localeCompare(a),
+  );
+}
+
+export function countInbox(db: AppDb, helperId: string) {
+  return (
+    db
+      .select({ value: count() })
+      .from(orders)
+      .where(and(eq(orders.helperId, helperId), eq(orders.taskStatus, "pending")))
+      .get()?.value ?? 0
+  );
+}
+
+export function listInbox(db: AppDb, helperId: string) {
+  return listOrders(db, { id: helperId, role: "helper" }, { task: "pending", month: null });
 }
 
 export function getOrder(db: AppDb, id: string): OrderListItem | null {
@@ -135,7 +173,12 @@ export function listSummaryOrders(db: AppDb, helperId?: string | null): SummaryO
     })
     .from(orders)
     .innerJoin(users, eq(orders.helperId, users.id));
-  return (helperId ? query.where(eq(orders.helperId, helperId)) : query).all();
+  return (helperId ? query.where(eq(orders.helperId, helperId)) : query)
+    .all()
+    .flatMap((row) => {
+      if (row.orderAmount == null || row.orderCurrency == null || row.orderDate == null) return [];
+      return [{ ...row, orderAmount: row.orderAmount, orderCurrency: row.orderCurrency, orderDate: row.orderDate }];
+    });
 }
 
 function addAudit(
@@ -208,6 +251,8 @@ export function createOrder(
           goodsReceivedAt: null,
           shippingReimbursed: false,
           shippingReimbursedAt: null,
+          taskStatus: input.shipDate || input.trackingNumber || input.carrier ? "shipped" : "ordered",
+          dispatchedOn: input.orderDate,
           createdAt: now,
           updatedAt: now,
         })
@@ -311,6 +356,7 @@ export function changeStatus(
   if (actor.role !== "admin") return { ok: false, code: "forbidden" };
   const current = db.select().from(orders).where(eq(orders.id, orderId)).get();
   if (!current) return { ok: false, code: "not_found" };
+  if (input.paid && (current.orderAmount == null || current.orderCurrency == null)) return { ok: false, code: "need_amount" };
   if (input.shippingReimbursed && current.shippingCost == null) return { ok: false, code: "need_shipping" };
 
   const paidAt = input.paid ? input.paidAt ?? todayTaipei() : null;
@@ -364,6 +410,163 @@ export function changeStatus(
     for (const entry of audits) addAudit(tx, { orderId, actorId: actor.id, ...entry });
   });
   return { ok: true, code: "status" };
+}
+
+export type DispatchInput = {
+  helperId: string;
+  productOptionId: string;
+  productName: string;
+  productLinks: string;
+  purchaseNote: string;
+  dispatchedOn: string;
+  deliveryMethod: DeliveryMethod;
+  deliveryAddress: string | null;
+};
+
+export function dispatchTask(
+  db: AppDb,
+  actorId: string,
+  input: DispatchInput,
+): { ok: true; id: string } | { ok: false; message: string } {
+  const id = crypto.randomUUID();
+  const now = nowIso();
+  try {
+    db.transaction((tx) => {
+      tx.insert(orders)
+        .values({
+          id,
+          helperId: input.helperId,
+          productOptionId: input.productOptionId,
+          productName: input.productName,
+          productLinks: input.productLinks,
+          purchaseNote: input.purchaseNote,
+          quantity: null,
+          orderAmount: null,
+          orderCurrency: null,
+          orderDate: null,
+          dispatchedOn: input.dispatchedOn,
+          expectedArrivalDate: null,
+          deliveryMethod: input.deliveryMethod,
+          deliveryAddress: input.deliveryAddress,
+          taskStatus: "pending",
+          carrier: null,
+          trackingNumber: null,
+          shipDate: null,
+          shippingCost: null,
+          shippingCurrency: null,
+          notes: null,
+          paid: false,
+          paidAt: null,
+          paidAmount: null,
+          paidCurrency: null,
+          goodsReceived: false,
+          goodsReceivedAt: null,
+          shippingReimbursed: false,
+          shippingReimbursedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      addAudit(tx, {
+        orderId: id,
+        actorId,
+        action: "task.dispatched",
+        summary: `派發任務：${input.productName}`,
+      });
+    });
+  } catch (error) {
+    console.error(error);
+    return { ok: false, message: "任務沒有派出去，請再試一次。" };
+  }
+  return { ok: true, id };
+}
+
+export function acceptTask(db: AppDb, actor: Viewer, orderId: string) {
+  if (actor.role !== "helper") return { ok: false as const, code: "forbidden" };
+  if (!isSafeId(orderId)) return { ok: false as const, code: "not_found" };
+  const current = db.select().from(orders).where(eq(orders.id, orderId)).get();
+  if (!current || current.helperId !== actor.id) return { ok: false as const, code: "not_found" };
+  if (current.taskStatus !== "pending") return { ok: false as const, code: "not_pending" };
+  db.transaction((tx) => {
+    tx.update(orders).set({ taskStatus: "accepted", updatedAt: nowIso() }).where(eq(orders.id, orderId)).run();
+    addAudit(tx, { orderId, actorId: actor.id, action: "task.accepted", summary: "接下任務" });
+  });
+  return { ok: true as const };
+}
+
+export type FulfillInput = {
+  productOptionId: string | null;
+  productName: string;
+  orderAmount: number;
+  orderCurrency: Currency;
+  orderDate: string;
+  carrier: string | null;
+  trackingNumber: string | null;
+  shipDate: string | null;
+  shippingCost: number | null;
+  shippingCurrency: Currency | null;
+  notes: string | null;
+};
+
+export function fulfillOrder(
+  db: AppDb,
+  actor: Viewer,
+  orderId: string,
+  input: FulfillInput,
+  files: IncomingFile[],
+): { ok: true } | { ok: false; message: string } {
+  if (actor.role !== "helper") return { ok: false, message: "只有小幫手可以回報下單。" };
+  const current = db.select().from(orders).where(eq(orders.id, orderId)).get();
+  if (!current || current.helperId !== actor.id) return { ok: false, message: "找不到訂單" };
+  if (current.taskStatus === "pending") return { ok: false, message: "請先接下這張單。" };
+
+  const nextStatus: TaskStatus = input.shipDate || input.trackingNumber || input.carrier ? "shipped" : "ordered";
+  try {
+    db.transaction((tx) => {
+      tx.update(orders)
+        .set({
+          productOptionId: input.productOptionId,
+          productName: input.productName,
+          orderAmount: input.orderAmount,
+          orderCurrency: input.orderCurrency,
+          orderDate: input.orderDate,
+          carrier: input.carrier,
+          trackingNumber: input.trackingNumber,
+          shipDate: input.shipDate,
+          shippingCost: input.shippingCost,
+          shippingCurrency: input.shippingCurrency,
+          notes: input.notes,
+          taskStatus: nextStatus,
+          updatedAt: nowIso(),
+        })
+        .where(eq(orders.id, orderId))
+        .run();
+      const changed = [
+        current.productName !== input.productName ? "商品名稱" : "",
+        (current.orderAmount ?? null) !== input.orderAmount || current.orderCurrency !== input.orderCurrency ? "訂購金額" : "",
+        (current.orderDate ?? null) !== input.orderDate ? "訂購日期" : "",
+        (current.carrier ?? null) !== input.carrier ? "物流公司" : "",
+        (current.trackingNumber ?? null) !== input.trackingNumber ? "追蹤單號" : "",
+        (current.shipDate ?? null) !== input.shipDate ? "寄出日期" : "",
+        (current.shippingCost ?? null) !== input.shippingCost ? "運費" : "",
+        (current.notes ?? null) !== input.notes ? "備註" : "",
+        current.taskStatus !== nextStatus ? (nextStatus === "shipped" ? "已寄出" : "已下單") : "",
+      ].filter(Boolean);
+      if (changed.length > 0) {
+        addAudit(tx, {
+          orderId,
+          actorId: actor.id,
+          action: "task.fulfilled",
+          summary: `回報下單：${formatMoney(input.orderAmount, input.orderCurrency)}（${changed.join("、")}）`,
+        });
+      }
+      storeFiles(tx, orderId, actor.id, files);
+    });
+  } catch (error) {
+    console.error(error);
+    return { ok: false, message: "訂單沒有存成功，請再試一次。" };
+  }
+  return { ok: true };
 }
 
 export function countKind(rows: Attachment[], kind: Attachment["kind"]) {

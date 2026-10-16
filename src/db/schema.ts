@@ -12,6 +12,14 @@ export const users = sqliteTable("users", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const productOptions = sqliteTable("product_options", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: text("created_at").notNull(),
+});
+
 export const orders = sqliteTable(
   "orders",
   {
@@ -19,13 +27,19 @@ export const orders = sqliteTable(
     helperId: text("helper_id")
       .notNull()
       .references(() => users.id),
+    productOptionId: text("product_option_id").references(() => productOptions.id),
     productName: text("product_name").notNull(),
-    productLinks: text("product_links").notNull(),
-    quantity: integer("quantity").notNull(),
-    orderAmount: integer("order_amount").notNull(),
-    orderCurrency: text("order_currency", { enum: ["JPY", "TWD"] }).notNull(),
-    orderDate: text("order_date").notNull(),
+    productLinks: text("product_links"),
+    purchaseNote: text("purchase_note"),
+    quantity: integer("quantity"),
+    orderAmount: integer("order_amount"),
+    orderCurrency: text("order_currency", { enum: ["JPY", "TWD"] }),
+    orderDate: text("order_date"),
+    dispatchedOn: text("dispatched_on"),
     expectedArrivalDate: text("expected_arrival_date"),
+    deliveryMethod: text("delivery_method", { enum: ["handoff", "ship_address", "warehouse"] }),
+    deliveryAddress: text("delivery_address"),
+    taskStatus: text("task_status", { enum: ["pending", "accepted", "ordered", "shipped"] }),
     carrier: text("carrier"),
     trackingNumber: text("tracking_number"),
     shipDate: text("ship_date"),
@@ -111,6 +125,7 @@ export const loginAttempts = sqliteTable(
 );
 
 export type User = typeof users.$inferSelect;
+export type ProductOption = typeof productOptions.$inferSelect;
 export type Order = typeof orders.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;

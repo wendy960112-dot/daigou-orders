@@ -9,11 +9,13 @@ describe("parseFilters", () => {
       month: "2026-10",
       status: null,
       helperId: null,
+      task: null,
     });
-    expect(parseFilters({ month: "2026-09", status: "unpaid", helperId: "user_mei" }, { defaultMonth: "2026-10" })).toEqual({
+    expect(parseFilters({ month: "2026-09", status: "unpaid", helperId: "user_mei", task: "pending" }, { defaultMonth: "2026-10" })).toEqual({
       month: "2026-09",
       status: "unpaid",
       helperId: "user_mei",
+      task: "pending",
     });
   });
 });

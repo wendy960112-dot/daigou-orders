@@ -1,3 +1,5 @@
+import { isTaskStatus, type TaskStatus } from "./tasks";
+
 export const STATUS_FILTERS = [
   { value: "unpaid", label: "未匯款" },
   { value: "paid", label: "已匯款" },
@@ -15,10 +17,11 @@ export type OrderFilters = {
   month: string | null;
   status: StatusFilter | null;
   helperId: string | null;
+  task: TaskStatus | null;
 };
 
 export function parseFilters(
-  input: { helperId?: string; status?: string; month?: string },
+  input: { helperId?: string; status?: string; month?: string; task?: string },
   options: { defaultMonth: string },
 ): OrderFilters {
   let month: string | null;
@@ -30,6 +33,7 @@ export function parseFilters(
   const status = input.status && STATUS_VALUES.has(input.status) ? (input.status as StatusFilter) : null;
   const helperId =
     input.helperId && /^[A-Za-z0-9_-]{1,80}$/.test(input.helperId) ? input.helperId : null;
+  const task = input.task && isTaskStatus(input.task) ? input.task : null;
 
-  return { month, status, helperId };
+  return { month, status, helperId, task };
 }

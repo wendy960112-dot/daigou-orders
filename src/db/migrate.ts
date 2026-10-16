@@ -46,10 +46,17 @@ export function migrate(sqlite: Database.Database) {
       )
       .filter(Boolean);
 
-    const apply = sqlite.transaction(() => {
-      for (const statement of statements) sqlite.exec(statement);
-      markStmt.run(file, new Date().toISOString());
-    });
-    apply();
+    const pragmas = statements.filter((statement) => /^PRAGMA\b/i.test(statement));
+    const body = statements.filter((statement) => !/^PRAGMA\b/i.test(statement));
+    for (const statement of pragmas) sqlite.exec(statement);
+    try {
+      const apply = sqlite.transaction(() => {
+        for (const statement of body) sqlite.exec(statement);
+        markStmt.run(file, new Date().toISOString());
+      });
+      apply();
+    } finally {
+      sqlite.pragma("foreign_keys = ON");
+    }
   }
 }

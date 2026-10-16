@@ -1,4 +1,5 @@
-import { isRealDate } from "./format";
+import { isRealDate, isSafeId } from "./format";
+import { isDeliveryMethod, type DeliveryMethod } from "./tasks";
 import type { Currency, OrderInput } from "./types";
 
 function fail(message: string): { ok: false; message: string } {
@@ -108,6 +109,108 @@ export function parseOrderForm(
       orderCurrency: orderCurrency.value,
       orderDate: orderDate.value,
       expectedArrivalDate: expectedArrivalDate.value,
+      carrier: carrier.value,
+      trackingNumber: trackingNumber.value,
+      shipDate: shipDate.value,
+      shippingCost: shippingCost.value,
+      shippingCurrency,
+      notes: notes.value,
+    },
+  };
+}
+
+export type DispatchFields = {
+  productOptionId: string;
+  productLinks: string;
+  purchaseNote: string;
+  dispatchedOn: string;
+  deliveryMethod: DeliveryMethod;
+  deliveryAddress: string | null;
+};
+
+export function parseDispatchForm(form: FormData): { ok: true; data: DispatchFields } | { ok: false; message: string } {
+  const productOptionId = readString(form, "productOptionId").trim();
+  if (!isSafeId(productOptionId)) return fail("請選擇商品名稱");
+
+  const links = readString(form, "productLinks")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (links.length === 0) return fail("請貼上至少一個商品連結");
+  if (links.length > 20) return fail("商品連結太多了，請分成兩筆任務");
+  if (links.some((link) => link.length > 2000)) return fail("有一條商品連結太長");
+
+  const purchaseNote = readString(form, "purchaseNote").trim();
+  if (!purchaseNote) return fail("請填下單內容");
+  if (purchaseNote.length > 4000) return fail("下單內容太長");
+
+  const dispatchedOn = parseRequiredDate(readString(form, "dispatchedOn"), "派發日期");
+  if (!dispatchedOn.ok) return dispatchedOn;
+
+  const deliveryRaw = readString(form, "deliveryMethod");
+  if (!isDeliveryMethod(deliveryRaw)) return fail("請選擇交貨形式");
+  const address = cleanText(readString(form, "deliveryAddress"), 500, "指定地址");
+  if (!address.ok) return address;
+  if (deliveryRaw === "ship_address" && !address.value) return fail("請填指定地址");
+
+  return {
+    ok: true,
+    data: {
+      productOptionId,
+      productLinks: links.join("\n"),
+      purchaseNote,
+      dispatchedOn: dispatchedOn.value,
+      deliveryMethod: deliveryRaw,
+      deliveryAddress: deliveryRaw === "ship_address" ? address.value : null,
+    },
+  };
+}
+
+export type FulfillFields = {
+  productOptionId: string;
+  orderAmount: number;
+  orderCurrency: Currency;
+  orderDate: string;
+  carrier: string | null;
+  trackingNumber: string | null;
+  shipDate: string | null;
+  shippingCost: number | null;
+  shippingCurrency: Currency | null;
+  notes: string | null;
+};
+
+export function parseFulfillForm(form: FormData): { ok: true; data: FulfillFields } | { ok: false; message: string } {
+  const productOptionId = readString(form, "productOptionId").trim();
+  if (!isSafeId(productOptionId)) return fail("請選擇商品名稱");
+  const orderAmount = parseRequiredAmount(readString(form, "orderAmount"), "訂購金額");
+  if (!orderAmount.ok) return orderAmount;
+  const orderCurrency = parseCurrency(readString(form, "orderCurrency"));
+  if (!orderCurrency.ok) return orderCurrency;
+  const orderDate = parseRequiredDate(readString(form, "orderDate"), "訂購日期");
+  if (!orderDate.ok) return orderDate;
+  const carrier = cleanText(readString(form, "carrier"), 100, "物流公司");
+  if (!carrier.ok) return carrier;
+  const trackingNumber = cleanText(readString(form, "trackingNumber"), 100, "追蹤單號");
+  if (!trackingNumber.ok) return trackingNumber;
+  const shipDate = parseOptionalDate(readString(form, "shipDate"), "寄出日期");
+  if (!shipDate.ok) return shipDate;
+  const shippingCost = parseOptionalAmount(readString(form, "shippingCost"), "運費");
+  if (!shippingCost.ok) return shippingCost;
+  let shippingCurrency: Currency | null = null;
+  if (shippingCost.value != null) {
+    const parsed = parseCurrency(readString(form, "shippingCurrency") || orderCurrency.value);
+    if (!parsed.ok) return parsed;
+    shippingCurrency = parsed.value;
+  }
+  const notes = cleanText(readString(form, "notes"), 4000, "備註");
+  if (!notes.ok) return notes;
+  return {
+    ok: true,
+    data: {
+      productOptionId,
+      orderAmount: orderAmount.value,
+      orderCurrency: orderCurrency.value,
+      orderDate: orderDate.value,
       carrier: carrier.value,
       trackingNumber: trackingNumber.value,
       shipDate: shipDate.value,
