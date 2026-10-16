@@ -10,10 +10,21 @@ export const NOTICES: Record<string, string> = {
   invalid: "有欄位填得不對，請再看一次。",
   self: "不能改自己的身份。",
   last_admin: "至少要留一位管理員。",
+  no_email: "這個人沒有電子郵件，不能重設密碼。",
+  reset_link: "已產生重設連結。請複製下面的網址，用 LINE 傳給對方。",
+  email_sent: "已寄出重設信，連結也顯示在下面。",
+  email_failed: "信沒有寄出。請改把下面的連結傳給對方。",
 };
 
 export function noticeTone(code: string) {
-  return code === "need_shipping" || code === "forbidden" || code === "self" || code === "last_admin" || code === "not_found" || code === "invalid"
+  return code === "need_shipping" ||
+    code === "forbidden" ||
+    code === "self" ||
+    code === "last_admin" ||
+    code === "not_found" ||
+    code === "invalid" ||
+    code === "no_email" ||
+    code === "email_failed"
     ? "warn"
     : "good";
 }

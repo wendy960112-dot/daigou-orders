@@ -1,28 +1,25 @@
 import { redirect } from "next/navigation";
+import { Field } from "@/components/field";
+import { inputClass, primaryButtonClass, secondaryButtonClass } from "@/components/styles";
 import { devLoginAllowed } from "@/lib/auth-policy";
+import { AUTH_ERRORS, AUTH_NOTICES } from "@/lib/auth-messages";
 import { getCurrentUser } from "@/lib/current-user";
 import { DEMO_USERS } from "@/lib/demo-users";
 import { lineConfigured } from "@/lib/line";
-import { primaryButtonClass, secondaryButtonClass } from "@/components/styles";
-
-const ERRORS: Record<string, string> = {
-  line_denied: "你取消了 LINE 登入。",
-  line_state: "登入驗證已過期，請再試一次。",
-  line_failed: "LINE 登入沒有成功，請稍後再試。",
-  line_config: "還沒設定 LINE 頻道。可以先用下面的試用登入，或照說明書設定。",
-};
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; notice?: string }>;
 }) {
   const user = await getCurrentUser();
   if (user) redirect(user.role === "pending" ? "/pending" : "/");
 
-  const { error } = await searchParams;
+  const { error, notice } = await searchParams;
   const showDevLogin = devLoginAllowed();
   const lineReady = lineConfigured();
+  const errorText = error ? AUTH_ERRORS[error] : undefined;
+  const noticeText = notice ? AUTH_NOTICES[notice] : undefined;
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-5 py-10">
@@ -41,9 +38,14 @@ export default async function LoginPage({
         <li>3. 運費用收據金額報銷，勾選「運費已報銷」。</li>
       </ol>
 
-      {error && ERRORS[error] ? (
+      {errorText ? (
         <p className="mt-5 rounded-xl bg-warn-soft px-3 py-2 text-sm text-warn" role="alert">
-          {ERRORS[error]}
+          {errorText}
+        </p>
+      ) : null}
+      {noticeText ? (
+        <p className="mt-5 rounded-xl bg-good-soft px-3 py-2 text-sm text-good" role="status">
+          {noticeText}
         </p>
       ) : null}
 
@@ -58,6 +60,30 @@ export default async function LoginPage({
           </div>
         )}
       </div>
+
+      <section className="mt-6 rounded-3xl border border-line bg-card p-4">
+        <h2 className="text-base font-semibold">用電子郵件登入</h2>
+        <p className="mt-1 text-sm leading-6 text-muted">沒有 LINE 也可以註冊。新帳號要等溫蒂核准。</p>
+        <form action="/api/auth/email/login" method="post" className="mt-4 space-y-3">
+          <Field label="電子郵件" required>
+            <input name="email" type="email" required autoComplete="email" className={inputClass} />
+          </Field>
+          <Field label="密碼" required>
+            <input name="password" type="password" required autoComplete="current-password" className={inputClass} />
+          </Field>
+          <button type="submit" className={`${primaryButtonClass} w-full`}>
+            登入
+          </button>
+        </form>
+        <div className="mt-2 flex flex-wrap gap-x-4">
+          <a href="/signup" className="inline-flex min-h-11 items-center text-sm font-medium text-brand">
+            註冊新帳號
+          </a>
+          <a href="/forgot-password" className="inline-flex min-h-11 items-center text-sm font-medium text-sea">
+            忘記密碼
+          </a>
+        </div>
+      </section>
 
       {showDevLogin ? (
         <section className="mt-8 rounded-3xl border border-line bg-card p-4">

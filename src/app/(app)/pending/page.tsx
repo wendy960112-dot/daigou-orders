@@ -19,6 +19,13 @@ export default async function PendingPage() {
           <span className="font-semibold break-all">{user.lineUserId}</span>
         </p>
       ) : null}
+      {user.email ? (
+        <p className="rounded-2xl bg-card px-4 py-3 text-sm leading-6">
+          你的電子郵件
+          <br />
+          <span className="font-semibold break-all">{user.email}</span>
+        </p>
+      ) : null}
       <Link href="/pending" className="inline-flex min-h-11 items-center text-sm font-medium text-brand">
         重新檢查
       </Link>
