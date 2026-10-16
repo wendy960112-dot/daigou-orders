@@ -1,3 +1,4 @@
+import { isPreviewHelperId } from "./preview";
 import type { Role, Viewer } from "./types";
 
 /**
@@ -16,7 +17,14 @@ export function adminLineIds() {
     .filter(Boolean);
 }
 
+export function canEnterPreview(viewer: { role: Role }) {
+  return viewer.role === "admin";
+}
+
 export function canViewOrder(viewer: Viewer, order: { helperId: string }) {
+  if (isPreviewHelperId(order.helperId)) {
+    return isPreviewHelperId(viewer.id) || viewer.preview === true;
+  }
   if (viewer.role === "admin") return true;
   if (viewer.role === "helper") return viewer.id === order.helperId;
   return false;
@@ -27,7 +35,7 @@ export function canEditOrder(viewer: Viewer, order: { helperId: string }) {
 }
 
 export function canManageStatus(viewer: Viewer) {
-  return viewer.role === "admin";
+  return viewer.role === "admin" && viewer.preview !== true;
 }
 
 export function canReviewHelpers(viewer: Viewer) {

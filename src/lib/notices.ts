@@ -10,10 +10,18 @@ export const NOTICES: Record<string, string> = {
   invalid: "有欄位填得不對，請再看一次。",
   self: "不能改自己的身份。",
   last_admin: "至少要留一位管理員。",
+  preview: "這是預覽用的小幫手，不能改身份。",
+  preview_reset: "已清空預覽訂單。正式訂單沒有變動。",
 };
 
 export function noticeTone(code: string) {
-  return code === "need_shipping" || code === "forbidden" || code === "self" || code === "last_admin" || code === "not_found" || code === "invalid"
+  return code === "need_shipping" ||
+    code === "forbidden" ||
+    code === "self" ||
+    code === "last_admin" ||
+    code === "not_found" ||
+    code === "invalid" ||
+    code === "preview"
     ? "warn"
     : "good";
 }

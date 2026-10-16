@@ -1,6 +1,7 @@
-import { asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 import { adminLineIds } from "@/lib/auth-policy";
 import { nowIso } from "@/lib/format";
+import { PREVIEW_HELPER_ID, PREVIEW_HELPER_NAME } from "@/lib/preview";
 import type { Role, Viewer } from "@/lib/types";
 import type { AppDb } from "./types";
 import { users, type User } from "./schema";
@@ -14,11 +15,56 @@ export function getUserByLineId(db: AppDb, lineUserId: string) {
 }
 
 export function listUsers(db: AppDb) {
-  return db.select().from(users).orderBy(asc(users.role), asc(users.displayName)).all();
+  return db
+    .select()
+    .from(users)
+    .where(eq(users.previewSandbox, false))
+    .orderBy(asc(users.role), asc(users.displayName))
+    .all();
 }
 
 export function listHelpers(db: AppDb) {
-  return db.select().from(users).where(eq(users.role, "helper")).orderBy(asc(users.displayName)).all();
+  return db
+    .select()
+    .from(users)
+    .where(and(eq(users.role, "helper"), eq(users.previewSandbox, false)))
+    .orderBy(asc(users.displayName))
+    .all();
+}
+
+export function ensurePreviewHelper(db: AppDb) {
+  const now = nowIso();
+  const existing = getUserById(db, PREVIEW_HELPER_ID);
+  if (existing) {
+    if (
+      existing.role !== "helper" ||
+      existing.displayName !== PREVIEW_HELPER_NAME ||
+      existing.previewSandbox !== true
+    ) {
+      db.update(users)
+        .set({
+          role: "helper",
+          displayName: PREVIEW_HELPER_NAME,
+          previewSandbox: true,
+          updatedAt: now,
+        })
+        .where(eq(users.id, PREVIEW_HELPER_ID))
+        .run();
+    }
+    return;
+  }
+  db.insert(users)
+    .values({
+      id: PREVIEW_HELPER_ID,
+      lineUserId: null,
+      displayName: PREVIEW_HELPER_NAME,
+      pictureUrl: null,
+      role: "helper",
+      previewSandbox: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
 }
 
 export function countAdmins(db: AppDb) {
@@ -55,6 +101,7 @@ export function upsertLineUser(
     displayName: profile.displayName,
     pictureUrl: profile.pictureUrl,
     role,
+    previewSandbox: false,
     createdAt: now,
     updatedAt: now,
   };
@@ -72,6 +119,7 @@ export function setUserRole(
   if (actor.id === targetId) return { ok: false, code: "self" };
   const target = getUserById(db, targetId);
   if (!target) return { ok: false, code: "not_found" };
+  if (target.previewSandbox) return { ok: false, code: "preview" };
   if (target.role === "admin" && countAdmins(db) <= 1) return { ok: false, code: "last_admin" };
   db.update(users).set({ role, updatedAt: nowIso() }).where(eq(users.id, targetId)).run();
   return { ok: true };

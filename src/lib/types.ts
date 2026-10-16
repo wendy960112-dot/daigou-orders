@@ -23,4 +23,11 @@ export type OrderInput = {
   notes: string | null;
 };
 
-export type Viewer = { id: string; role: Role };
+export type Viewer = {
+  id: string;
+  role: Role;
+  /** Signed-in person when an admin is previewing as the sandbox helper. */
+  actorId?: string;
+  /** Actions taken while the admin is in 小幫手視角. */
+  preview?: boolean;
+};

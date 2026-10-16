@@ -6,6 +6,7 @@ import { migrate } from "./migrate";
 import * as schema from "./schema";
 import { insertDemoDataIfEmpty } from "./seed-data";
 import type { AppDb } from "./types";
+import { ensurePreviewHelper } from "./users";
 
 const globalForDb = globalThis as unknown as { __daigouDb?: AppDb };
 
@@ -21,7 +22,9 @@ export function openAppDatabase(filename: string): AppDb {
   sqlite.pragma("foreign_keys = ON");
   if (filename !== ":memory:") sqlite.pragma("journal_mode = WAL");
   migrate(sqlite);
-  return drizzle(sqlite, { schema });
+  const db = drizzle(sqlite, { schema });
+  ensurePreviewHelper(db);
+  return db;
 }
 
 export function getDb() {

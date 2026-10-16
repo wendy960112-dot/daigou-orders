@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { canManageStatus, canViewOrder, devLoginAllowed } from "./auth-policy";
+import { canEnterPreview, canManageStatus, canViewOrder, devLoginAllowed } from "./auth-policy";
+import { PREVIEW_HELPER_ID } from "./preview";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -43,5 +44,16 @@ describe("order access", () => {
     expect(canViewOrder({ id: "user_lin", role: "pending" }, order)).toBe(false);
     expect(canManageStatus({ id: "user_wendy", role: "admin" })).toBe(true);
     expect(canManageStatus({ id: "user_mei", role: "helper" })).toBe(false);
+  });
+
+  it("keeps the preview sandbox visible only inside helper preview", () => {
+    const sandbox = { helperId: PREVIEW_HELPER_ID };
+    expect(canViewOrder({ id: "user_wendy", role: "admin" }, sandbox)).toBe(false);
+    expect(canViewOrder({ id: "user_mei", role: "helper" }, sandbox)).toBe(false);
+    expect(canViewOrder({ id: PREVIEW_HELPER_ID, role: "helper", preview: true }, sandbox)).toBe(true);
+    expect(canManageStatus({ id: "user_wendy", role: "admin", preview: true })).toBe(false);
+    expect(canEnterPreview({ role: "admin" })).toBe(true);
+    expect(canEnterPreview({ role: "helper" })).toBe(false);
+    expect(canEnterPreview({ role: "pending" })).toBe(false);
   });
 });
