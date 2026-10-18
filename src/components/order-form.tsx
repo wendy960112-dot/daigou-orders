@@ -118,10 +118,10 @@ export function FulfillForm({
         <Field label="物流公司" hint="固定為 EMS，不用改。">
           <input name="carrier" readOnly value={DEFAULT_CARRIER} aria-readonly="true" className={`${inputClass} bg-paper`} />
         </Field>
-        <Field label="追蹤單號（非必填）" hint="沒有單號可以留空。">
+        <Field label="追蹤單號（非必填）" hint="沒有單號可以留空。有填追蹤單號或寄出日期，進度才會變成已寄出。">
           <input name="trackingNumber" className={inputClass} defaultValue={initial.trackingNumber ?? ""} placeholder="可以先留空" />
         </Field>
-        <Field label={deliveryMethod === "handoff" ? "交付日期" : "寄出日期"}>
+        <Field label={deliveryMethod === "handoff" ? "交付日期" : "寄出日期"} hint="有填追蹤單號或寄出日期，進度才會變成已寄出。只填物流公司不會。">
           <input name="shipDate" type="date" className={inputClass} defaultValue={initial.shipDate ?? ""} />
         </Field>
         <div className="grid grid-cols-2 gap-3">

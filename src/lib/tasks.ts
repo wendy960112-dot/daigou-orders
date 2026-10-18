@@ -36,6 +36,14 @@ export function taskStatusLabel(status: TaskStatus) {
   return TASK_STATUSES.find((item) => item.value === status)?.label ?? status;
 }
 
+function filled(value: string | null | undefined) {
+  return Boolean(value && value.trim());
+}
+
+export function isShippedReport(order: { shipDate?: string | null; trackingNumber?: string | null }) {
+  return filled(order.shipDate) || filled(order.trackingNumber);
+}
+
 export function resolveTaskStatus(order: {
   taskStatus: string | null;
   shipDate: string | null;
@@ -43,6 +51,6 @@ export function resolveTaskStatus(order: {
   carrier: string | null;
 }): TaskStatus {
   if (isTaskStatus(order.taskStatus)) return order.taskStatus;
-  if (order.shipDate || order.trackingNumber || order.carrier) return "shipped";
+  if (isShippedReport(order)) return "shipped";
   return "ordered";
 }

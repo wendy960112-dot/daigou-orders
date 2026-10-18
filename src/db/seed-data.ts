@@ -251,7 +251,7 @@ export function insertDemoData(db: AppDb) {
     UPDATE orders
     SET dispatched_on = order_date,
         task_status = CASE
-          WHEN ship_date IS NOT NULL OR tracking_number IS NOT NULL OR carrier IS NOT NULL THEN 'shipped'
+          WHEN trim(coalesce(ship_date, '')) != '' OR trim(coalesce(tracking_number, '')) != '' THEN 'shipped'
           ELSE 'ordered'
         END
     WHERE task_status IS NULL
