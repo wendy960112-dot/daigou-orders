@@ -196,7 +196,7 @@ export function AdminEditForm({
           代填金額和截圖
         </label>
         <p className="text-xs leading-5 text-muted">
-          勾了之後會標成已下單。有追蹤單號或寄出日期就標成已寄出。物流公司固定是 {DEFAULT_CARRIER}。一定要有訂單截圖。
+          勾了之後會標成已下單。只有追蹤單號或寄出日期會把進度變成已寄出。物流公司固定是 {DEFAULT_CARRIER}，不會因此變成已寄出。一定要有訂單截圖。
         </p>
         {taskStatus === "pending" && !saveReport ? (
           <label className="flex min-h-11 items-center gap-3 text-base font-medium">
@@ -220,13 +220,13 @@ export function AdminEditForm({
             <Field label="訂購日期" required>
               <input name="orderDate" required type="date" defaultValue={orderDate ?? today} className={inputClass} />
             </Field>
-            <Field label="物流公司">
+            <Field label="物流公司" hint="固定為 EMS。不會因此變成已寄出。">
               <input name="carrier" readOnly value={DEFAULT_CARRIER} className={`${inputClass} bg-paper text-muted`} />
             </Field>
-            <Field label="追蹤單號" hint="非必填。有填的話，進度會變成已寄出。">
+            <Field label="追蹤單號" hint="非必填。有填追蹤單號或寄出日期，進度才會變成已寄出。">
               <input name="trackingNumber" defaultValue={trackingNumber ?? ""} className={inputClass} />
             </Field>
-            <Field label="寄出日期" hint="有填的話，進度會變成已寄出。">
+            <Field label="寄出日期" hint="有填追蹤單號或寄出日期，進度才會變成已寄出。">
               <input name="shipDate" type="date" defaultValue={shipDate ?? ""} className={inputClass} />
             </Field>
             <div className="grid grid-cols-2 gap-3">

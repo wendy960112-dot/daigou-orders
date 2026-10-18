@@ -2,7 +2,7 @@ import { and, asc, count, desc, eq, gte, isNotNull, isNull, lte, or, sql } from 
 import { formatMoney, isSafeId, nowIso, todayTaipei } from "@/lib/format";
 import { formatProxyFields, parseProxyFields } from "@/lib/proxy";
 import type { SummaryOrder } from "@/lib/summary";
-import type { DeliveryMethod, TaskStatus } from "@/lib/tasks";
+import { isShippedReport, type DeliveryMethod, type TaskStatus } from "@/lib/tasks";
 import type { AttachmentKind, Currency, OrderInput, Viewer } from "@/lib/types";
 import type { IncomingFile } from "@/lib/uploads";
 import { orderProofMessage, removeUpload, writeUpload } from "@/lib/uploads";
@@ -55,13 +55,16 @@ function taskWhere(task: TaskStatus | null) {
   if (task === "ordered") {
     return or(
       eq(orders.taskStatus, "ordered"),
-      and(isNull(orders.taskStatus), isNull(orders.shipDate), isNull(orders.trackingNumber), isNull(orders.carrier)),
+      and(isNull(orders.taskStatus), sql`trim(coalesce(${orders.shipDate}, '')) = ''`, sql`trim(coalesce(${orders.trackingNumber}, '')) = ''`),
     );
   }
   if (task === "shipped") {
     return or(
       eq(orders.taskStatus, "shipped"),
-      and(isNull(orders.taskStatus), or(isNotNull(orders.shipDate), isNotNull(orders.trackingNumber), isNotNull(orders.carrier))),
+      and(
+        isNull(orders.taskStatus),
+        or(sql`trim(coalesce(${orders.shipDate}, '')) != ''`, sql`trim(coalesce(${orders.trackingNumber}, '')) != ''`),
+      ),
     );
   }
   return undefined;
@@ -268,7 +271,7 @@ export function createOrder(
           goodsReceivedAt: null,
           shippingReimbursed: false,
           shippingReimbursedAt: null,
-          taskStatus: input.shipDate || input.trackingNumber || input.carrier ? "shipped" : "ordered",
+          taskStatus: isShippedReport(input) ? "shipped" : "ordered",
           dispatchedOn: input.orderDate,
           createdAt: now,
           updatedAt: now,
@@ -557,7 +560,7 @@ export function fulfillOrder(
   if (!current || current.helperId !== actor.id || current.deletedAt) return { ok: false, message: "找不到訂單" };
   if (current.taskStatus === "pending") return { ok: false, message: "請先接下這張單。" };
 
-  const nextStatus: TaskStatus = input.shipDate || input.trackingNumber || input.carrier ? "shipped" : "ordered";
+  const nextStatus: TaskStatus = isShippedReport(input) ? "shipped" : "ordered";
   try {
     db.transaction((tx) => {
       tx.update(orders)
@@ -671,7 +674,7 @@ export function adminEditOrder(
   }
 
   let nextStatus = current.taskStatus;
-  if (report) nextStatus = report.shipDate || report.trackingNumber ? "shipped" : "ordered";
+  if (report) nextStatus = isShippedReport(report) ? "shipped" : "ordered";
   else if (input.markAccepted && current.taskStatus === "pending") nextStatus = "accepted";
 
   const paidAt = input.paid ? input.paidAt ?? todayTaipei() : null;

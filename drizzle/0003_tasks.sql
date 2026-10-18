@@ -59,7 +59,7 @@ SELECT
   shipping_reimbursed, shipping_reimbursed_at, created_at, updated_at,
   order_date,
   CASE
-    WHEN ship_date IS NOT NULL OR tracking_number IS NOT NULL OR carrier IS NOT NULL THEN 'shipped'
+    WHEN trim(coalesce(ship_date, '')) != '' OR trim(coalesce(tracking_number, '')) != '' THEN 'shipped'
     ELSE 'ordered'
   END
 FROM orders;
