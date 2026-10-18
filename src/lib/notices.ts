@@ -20,6 +20,7 @@ export const NOTICES: Record<string, string> = {
   deleted_order: "已刪除這張任務。它不會出現在列表和彙總。",
   restored: "已還原這張任務。",
   deleted_locked: "這張任務已刪除，請先還原。",
+  proxy_saved: "已代填並儲存。小幫手現在看得到。",
   product_saved: "已更新商品名稱。",
   no_email: "這個人沒有電子郵件，不能重設密碼。",
   reset_link: "已產生重設連結。請複製下面的網址，用 LINE 傳給對方。",

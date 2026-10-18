@@ -15,6 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/");
   }
   if (user.role !== "admin" && path === "/orders/new") redirect(user.role === "helper" ? "/inbox" : "/");
+  if (user.role !== "admin" && /\/edit$/.test(path)) redirect("/");
   if (user.role === "admin" && path.startsWith("/inbox")) redirect("/");
 
   const inboxCount = user.role === "helper" ? countInbox(getDb(), user.id) : 0;

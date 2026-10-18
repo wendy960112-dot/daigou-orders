@@ -6,6 +6,7 @@ import { AttachmentGallery } from "@/components/attachments";
 import { DeleteOrderButton } from "@/components/delete-order-button";
 import { Notice } from "@/components/notice";
 import { FulfillForm } from "@/components/order-form";
+import { ProxyNote } from "@/components/proxy-note";
 import { StatusForm } from "@/components/status-form";
 import { StatusBadges, TaskBadge } from "@/components/status-badges";
 import { cardClass, primaryButtonClass, secondaryButtonClass } from "@/components/styles";
@@ -15,6 +16,7 @@ import { getProductOption, listProductOptions } from "@/db/products";
 import { canViewOrder } from "@/lib/auth-policy";
 import { requireUser } from "@/lib/current-user";
 import { formatDate, formatDateTime, formatMoney, todayTaipei } from "@/lib/format";
+import { hasProxy } from "@/lib/proxy";
 import { deliveryLabel, resolveTaskStatus } from "@/lib/tasks";
 import type { Currency } from "@/lib/types";
 
@@ -64,6 +66,7 @@ export default async function OrderPage({
     (order.productOptionId && options.some((option) => option.id === order.productOptionId) ? order.productOptionId : null) ??
     options.find((option) => option.name === order.productName)?.id ??
     "";
+  const proxy = (key: string) => hasProxy(order.proxyFields, key);
 
   return (
     <div className="space-y-4">
@@ -71,6 +74,9 @@ export default async function OrderPage({
         {order.deletedAt ? "← 回已刪除" : "← 回訂單列表"}
       </Link>
       <Notice code={one(query.notice)} />
+      {order.proxyFields ? (
+        <p className="rounded-2xl bg-sea-soft px-4 py-3 text-sm leading-6 text-sea">溫蒂代填了部分內容。標了「由管理員代填」的欄位是管理員幫這位小幫手寫的。</p>
+      ) : null}
       {order.deletedAt ? (
         <div className="space-y-3 rounded-2xl bg-warn-soft px-4 py-3">
           <p className="text-sm leading-6 text-warn">這張任務已刪除，列表、彙總和小幫手都看不到。截圖還在。</p>
@@ -87,9 +93,16 @@ export default async function OrderPage({
           {listed ? formatDate(listed) : "日期未填"}
           {order.orderDate ? "" : order.dispatchedOn ? " 派發" : ""}
           {user.role === "admin" ? ` · ${order.helperName}` : ""}
+          {proxy("helper") ? <ProxyNote on /> : null}
         </p>
-        <h1 className="text-2xl font-bold leading-8">{order.productName}</h1>
-        <p className="text-xl font-bold">{moneyText(order.orderAmount, order.orderCurrency, "尚未回報金額")}</p>
+        <h1 className="text-2xl font-bold leading-8">
+          {order.productName}
+          <ProxyNote on={proxy("productName")} />
+        </h1>
+        <p className="text-xl font-bold">
+          {moneyText(order.orderAmount, order.orderCurrency, "尚未回報金額")}
+          <ProxyNote on={proxy("orderAmount")} />
+        </p>
         {order.quantity != null ? <p className="text-sm text-muted">數量 {order.quantity}</p> : null}
         <div className="flex flex-wrap items-center gap-1.5">
           <TaskBadge status={taskStatus} />
@@ -101,24 +114,35 @@ export default async function OrderPage({
           />
         </div>
         {user.role === "admin" && !order.deletedAt ? (
-          <DeleteOrderButton
-            orderId={order.id}
-            productName={order.productName}
-            paid={order.paid}
-            shippingReimbursed={order.shippingReimbursed}
-          />
+          <div className="flex flex-wrap gap-2">
+            <Link href={`/orders/${order.id}/edit`} className={secondaryButtonClass}>
+              編輯
+            </Link>
+            <DeleteOrderButton
+              orderId={order.id}
+              productName={order.productName}
+              paid={order.paid}
+              shippingReimbursed={order.shippingReimbursed}
+            />
+          </div>
         ) : null}
       </header>
 
       <section className={`${cardClass} space-y-2`}>
         {order.purchaseNote ? (
           <div>
-            <h2 className="text-sm font-semibold">下單內容</h2>
+            <h2 className="text-sm font-semibold">
+              下單內容
+              <ProxyNote on={proxy("purchaseNote")} />
+            </h2>
             <p className="mt-1 whitespace-pre-wrap text-sm leading-6">{order.purchaseNote}</p>
           </div>
         ) : null}
         <div>
-          <h2 className="text-sm font-semibold">商品連結</h2>
+          <h2 className="text-sm font-semibold">
+            商品連結
+            <ProxyNote on={proxy("productLinks")} />
+          </h2>
           {links.length === 0 ? <p className="mt-1 text-sm text-muted">沒有商品連結。</p> : null}
           <ul className="mt-1 space-y-1">
             {links.map((link) => (
@@ -137,7 +161,14 @@ export default async function OrderPage({
         {order.deliveryMethod ? (
           <p className="text-sm leading-6">
             交貨形式：{deliveryLabel(order.deliveryMethod)}
-            {order.dispatchedOn ? <span className="text-muted"> · {formatDate(order.dispatchedOn)} 派發</span> : null}
+            <ProxyNote on={proxy("delivery")} />
+            {order.dispatchedOn ? (
+              <span className="text-muted">
+                {" "}
+                · {formatDate(order.dispatchedOn)} 派發
+                <ProxyNote on={proxy("dispatchedOn")} />
+              </span>
+            ) : null}
           </p>
         ) : null}
         {order.deliveryAddress ? <p className="whitespace-pre-wrap text-sm leading-6">{order.deliveryAddress}</p> : null}
@@ -145,14 +176,30 @@ export default async function OrderPage({
         {order.carrier || order.trackingNumber || order.shipDate ? (
           <p className="pt-2 text-sm leading-6">
             {order.carrier ? `${order.carrier} ` : ""}
+            <ProxyNote on={proxy("carrier")} />
             {order.trackingNumber ? <span className="break-all">{order.trackingNumber}</span> : null}
-            {order.shipDate ? <span className="text-muted"> · {formatDate(order.shipDate)} 寄出</span> : null}
+            <ProxyNote on={proxy("trackingNumber")} />
+            {order.shipDate ? (
+              <span className="text-muted">
+                {" "}
+                · {formatDate(order.shipDate)} 寄出
+                <ProxyNote on={proxy("shipDate")} />
+              </span>
+            ) : null}
           </p>
         ) : null}
         {order.shippingCost != null && shippingCurrency ? (
-          <p className="text-sm">運費 {formatMoney(order.shippingCost, shippingCurrency)}</p>
+          <p className="text-sm">
+            運費 {formatMoney(order.shippingCost, shippingCurrency)}
+            <ProxyNote on={proxy("shippingCost")} />
+          </p>
         ) : null}
-        {order.notes ? <p className="whitespace-pre-wrap text-sm leading-6 text-muted">{order.notes}</p> : null}
+        {order.notes ? (
+          <p className="whitespace-pre-wrap text-sm leading-6 text-muted">
+            {order.notes}
+            <ProxyNote on={proxy("notes")} />
+          </p>
+        ) : null}
       </section>
 
       {user.role === "helper" && taskStatus === "pending" ? (
@@ -183,7 +230,7 @@ export default async function OrderPage({
         />
       ) : null}
 
-      <AttachmentGallery title="訂單截圖" items={proofs} empty="還沒有訂單截圖。" />
+      <AttachmentGallery title={<>訂單截圖<ProxyNote on={proxy("orderProof")} /></>} items={proofs} empty="還沒有訂單截圖。" />
       <AttachmentGallery title="運費收據" items={receipts} empty="還沒有運費收據。" />
       {user.role === "helper" ? <p className="text-xs leading-5 text-muted">匯款證明只有你和溫蒂看得到。</p> : null}
       <AttachmentGallery
