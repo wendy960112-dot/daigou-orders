@@ -1,10 +1,11 @@
 import { and, asc, count, desc, eq, gte, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { formatMoney, isSafeId, nowIso, todayTaipei } from "@/lib/format";
+import { formatProxyFields, parseProxyFields } from "@/lib/proxy";
 import type { SummaryOrder } from "@/lib/summary";
 import type { DeliveryMethod, TaskStatus } from "@/lib/tasks";
 import type { AttachmentKind, Currency, OrderInput, Viewer } from "@/lib/types";
 import type { IncomingFile } from "@/lib/uploads";
-import { removeUpload, writeUpload } from "@/lib/uploads";
+import { orderProofMessage, removeUpload, writeUpload } from "@/lib/uploads";
 import type { StatusFilter } from "@/lib/filters";
 import { attachments, auditLogs, orders, users, type Attachment, type Order } from "./schema";
 import type { AppDb } from "./types";
@@ -514,6 +515,22 @@ export function acceptTask(db: AppDb, actor: Viewer, orderId: string) {
   return { ok: true as const };
 }
 
+function dropProxyFields(current: string | null, keys: string[]) {
+  const fields = parseProxyFields(current);
+  for (const key of keys) {
+    if (key) fields.delete(key);
+  }
+  return formatProxyFields(fields);
+}
+
+function addProxyFields(current: string | null, keys: string[]) {
+  const fields = parseProxyFields(current);
+  for (const key of keys) {
+    if (key) fields.add(key);
+  }
+  return formatProxyFields(fields);
+}
+
 export type FulfillInput = {
   productOptionId: string | null;
   productName: string;
@@ -557,6 +574,17 @@ export function fulfillOrder(
           shippingCurrency: input.shippingCurrency,
           notes: input.notes,
           taskStatus: nextStatus,
+          proxyFields: dropProxyFields(current.proxyFields, [
+            current.productName !== input.productName ? "productName" : "",
+            (current.orderAmount ?? null) !== input.orderAmount ? "orderAmount" : "",
+            (current.orderDate ?? null) !== input.orderDate ? "orderDate" : "",
+            (current.trackingNumber ?? null) !== input.trackingNumber ? "trackingNumber" : "",
+            (current.shipDate ?? null) !== input.shipDate ? "shipDate" : "",
+            (current.shippingCost ?? null) !== input.shippingCost ? "shippingCost" : "",
+            (current.notes ?? null) !== input.notes ? "notes" : "",
+            (current.carrier ?? null) !== input.carrier ? "carrier" : "",
+            files.some((file) => file.kind === "order_proof") ? "orderProof" : "",
+          ]),
           updatedAt: nowIso(),
         })
         .where(eq(orders.id, orderId))
@@ -586,6 +614,231 @@ export function fulfillOrder(
     console.error(error);
     return { ok: false, message: "訂單沒有存成功，請再試一次。" };
   }
+  return { ok: true };
+}
+
+export type AdminEditInput = {
+  helperId: string;
+  helperName: string;
+  productOptionId: string;
+  productName: string;
+  productLinks: string;
+  purchaseNote: string;
+  dispatchedOn: string;
+  deliveryMethod: DeliveryMethod;
+  deliveryAddress: string | null;
+  saveReport: boolean;
+  markAccepted: boolean;
+  report: Omit<FulfillInput, "productOptionId" | "productName"> | null;
+  paid: boolean;
+  paidAt: string | null;
+  paidAmount: number | null;
+  paidCurrency: Currency | null;
+  goodsReceived: boolean;
+  shippingReimbursed: boolean;
+};
+
+export function adminEditOrder(
+  db: AppDb,
+  actor: Viewer,
+  orderId: string,
+  input: AdminEditInput,
+  files: IncomingFile[],
+  removeIds: string[],
+): { ok: true } | { ok: false; message: string } {
+  if (actor.role !== "admin") return { ok: false, message: "只有管理員可以代填。" };
+  if (!isSafeId(orderId)) return { ok: false, message: "找不到訂單" };
+  const current = db.select().from(orders).where(eq(orders.id, orderId)).get();
+  if (!current) return { ok: false, message: "找不到訂單" };
+  if (current.deletedAt) return { ok: false, message: "這張任務已刪除，請先還原。" };
+
+  const report = input.saveReport ? input.report : null;
+  const nextAmount = report ? report.orderAmount : current.orderAmount;
+  const nextCurrency = report ? report.orderCurrency : current.orderCurrency;
+  const nextShipping = report ? report.shippingCost : current.shippingCost;
+  if (input.paid && (nextAmount == null || nextCurrency == null)) return { ok: false, message: "小幫手還沒回報訂購金額，先不要勾已匯款。" };
+  if (input.shippingReimbursed && nextShipping == null) return { ok: false, message: "請先填好運費金額，才能勾選運費已報銷。" };
+  if (report) {
+    const existingProofs = db
+      .select()
+      .from(attachments)
+      .where(and(eq(attachments.orderId, orderId), eq(attachments.kind, "order_proof")))
+      .all();
+    const removing = new Set(removeIds);
+    const kept = existingProofs.filter((row) => !removing.has(row.id)).length;
+    const proofError = orderProofMessage(kept, files.filter((file) => file.kind === "order_proof").length);
+    if (proofError) return { ok: false, message: proofError };
+  }
+
+  let nextStatus = current.taskStatus;
+  if (report) nextStatus = report.shipDate || report.trackingNumber ? "shipped" : "ordered";
+  else if (input.markAccepted && current.taskStatus === "pending") nextStatus = "accepted";
+
+  const paidAt = input.paid ? input.paidAt ?? todayTaipei() : null;
+  const paidAmount = input.paid ? input.paidAmount ?? nextAmount : null;
+  const paidCurrency = input.paid ? input.paidCurrency ?? nextCurrency : null;
+  const goodsReceivedAt = input.goodsReceived ? current.goodsReceivedAt ?? nowIso() : null;
+  const shippingReimbursedAt = input.shippingReimbursed ? current.shippingReimbursedAt ?? nowIso() : null;
+
+  const changed: string[] = [];
+  const proxyKeys: string[] = [];
+  if (current.helperId !== input.helperId) {
+    changed.push(`改派給${input.helperName}`);
+    proxyKeys.push("helper");
+  }
+  if (current.productName !== input.productName) {
+    changed.push("商品名稱");
+    proxyKeys.push("productName");
+  }
+  if ((current.purchaseNote ?? null) !== input.purchaseNote) {
+    changed.push("下單內容");
+    proxyKeys.push("purchaseNote");
+  }
+  if ((current.productLinks ?? null) !== input.productLinks) {
+    changed.push("商品連結");
+    proxyKeys.push("productLinks");
+  }
+  if ((current.dispatchedOn ?? null) !== input.dispatchedOn) {
+    changed.push("派發日期");
+    proxyKeys.push("dispatchedOn");
+  }
+  if ((current.deliveryMethod ?? null) !== input.deliveryMethod || (current.deliveryAddress ?? null) !== input.deliveryAddress) {
+    changed.push("交貨形式");
+    proxyKeys.push("delivery");
+  }
+  if (report) {
+    if ((current.orderAmount ?? null) !== report.orderAmount || current.orderCurrency !== report.orderCurrency) {
+      changed.push("訂購金額");
+      proxyKeys.push("orderAmount");
+    }
+    if ((current.orderDate ?? null) !== report.orderDate) {
+      changed.push("訂購日期");
+      proxyKeys.push("orderDate");
+    }
+    if ((current.trackingNumber ?? null) !== report.trackingNumber) {
+      changed.push("追蹤單號");
+      proxyKeys.push("trackingNumber");
+    }
+    if ((current.shipDate ?? null) !== report.shipDate) {
+      changed.push("寄出日期");
+      proxyKeys.push("shipDate");
+    }
+    if ((current.shippingCost ?? null) !== report.shippingCost) {
+      changed.push("運費");
+      proxyKeys.push("shippingCost");
+    }
+    if ((current.notes ?? null) !== report.notes) {
+      changed.push("備註");
+      proxyKeys.push("notes");
+    }
+    if ((current.carrier ?? null) !== report.carrier) {
+      changed.push("物流公司");
+      proxyKeys.push("carrier");
+    }
+  }
+  if (current.taskStatus !== nextStatus) {
+    changed.push(nextStatus === "shipped" ? "已寄出" : nextStatus === "ordered" ? "已下單" : "代為接下");
+  }
+  if (files.some((file) => file.kind === "order_proof")) proxyKeys.push("orderProof");
+
+  const paidChanged =
+    current.paid !== input.paid ||
+    (current.paidAt ?? null) !== paidAt ||
+    (current.paidAmount ?? null) !== paidAmount ||
+    (current.paidCurrency ?? null) !== paidCurrency;
+  const receivedChanged = current.goodsReceived !== input.goodsReceived;
+  const shippingPaidChanged = current.shippingReimbursed !== input.shippingReimbursed;
+
+  const removed: string[] = [];
+  try {
+    db.transaction((tx) => {
+      for (const id of removeIds) {
+        if (!isSafeId(id)) continue;
+        const row = tx.select().from(attachments).where(eq(attachments.id, id)).get();
+        if (!row || row.orderId !== orderId) continue;
+        tx.delete(attachments).where(eq(attachments.id, id)).run();
+        addAudit(tx, { orderId, actorId: actor.id, action: "attachment.deleted", summary: `刪除了附件：${row.fileName}` });
+        removed.push(id);
+        if (row.kind === "order_proof") proxyKeys.push("orderProof");
+      }
+      tx.update(orders)
+        .set({
+          helperId: input.helperId,
+          productOptionId: input.productOptionId,
+          productName: input.productName,
+          productLinks: input.productLinks,
+          purchaseNote: input.purchaseNote,
+          dispatchedOn: input.dispatchedOn,
+          deliveryMethod: input.deliveryMethod,
+          deliveryAddress: input.deliveryAddress,
+          ...(report
+            ? {
+                orderAmount: report.orderAmount,
+                orderCurrency: report.orderCurrency,
+                orderDate: report.orderDate,
+                carrier: report.carrier,
+                trackingNumber: report.trackingNumber,
+                shipDate: report.shipDate,
+                shippingCost: report.shippingCost,
+                shippingCurrency: report.shippingCurrency,
+                notes: report.notes,
+              }
+            : {}),
+          taskStatus: nextStatus,
+          paid: input.paid,
+          paidAt,
+          paidAmount,
+          paidCurrency,
+          goodsReceived: input.goodsReceived,
+          goodsReceivedAt,
+          shippingReimbursed: input.shippingReimbursed,
+          shippingReimbursedAt,
+          proxyFields: addProxyFields(current.proxyFields, proxyKeys),
+          updatedAt: nowIso(),
+        })
+        .where(eq(orders.id, orderId))
+        .run();
+      if (changed.length > 0 || files.length > 0) {
+        const money = report ? formatMoney(report.orderAmount, report.orderCurrency) : "";
+        const detail = [money, ...changed].filter(Boolean).join("、");
+        addAudit(tx, {
+          orderId,
+          actorId: actor.id,
+          action: "order.proxy_filled",
+          summary: `由管理員代填${detail ? `：${detail}` : ""}`,
+        });
+      }
+      if (paidChanged) {
+        addAudit(tx, {
+          orderId,
+          actorId: actor.id,
+          action: "status.paid",
+          summary: input.paid ? `勾選已匯款（${paidLabel(paidAt, paidAmount, paidCurrency)}）` : "取消已匯款",
+        });
+      }
+      if (receivedChanged) {
+        addAudit(tx, {
+          orderId,
+          actorId: actor.id,
+          action: "status.received",
+          summary: input.goodsReceived ? "勾選已收到貨" : "取消已收到貨",
+        });
+      }
+      if (shippingPaidChanged) {
+        addAudit(tx, {
+          orderId,
+          actorId: actor.id,
+          action: "status.shipping",
+          summary: input.shippingReimbursed ? "勾選運費已報銷" : "取消運費已報銷",
+        });
+      }
+      storeFiles(tx, orderId, actor.id, files);
+    });
+  } catch (error) {
+    console.error(error);
+    return { ok: false, message: "沒有存成功，請再試一次。" };
+  }
+  for (const id of removed) removeUpload(id);
   return { ok: true };
 }
 

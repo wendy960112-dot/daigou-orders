@@ -58,6 +58,7 @@ export const orders = sqliteTable(
     shippingReimbursedAt: text("shipping_reimbursed_at"),
     deletedAt: text("deleted_at"),
     deletedBy: text("deleted_by").references(() => users.id),
+    proxyFields: text("proxy_fields"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },

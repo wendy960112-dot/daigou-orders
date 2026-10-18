@@ -6,6 +6,7 @@ import { getDb } from "@/db";
 import {
   acceptTask as acceptTaskRow,
   addAttachments,
+  adminEditOrder,
   changeStatus,
   countKind,
   deleteAttachment,
@@ -22,9 +23,9 @@ import { canViewOrder } from "@/lib/auth-policy";
 import { getCurrentUser } from "@/lib/current-user";
 import { isSafeId } from "@/lib/format";
 import { NOTICES } from "@/lib/notices";
-import type { ActionState } from "@/lib/types";
+import type { ActionState, AttachmentKind } from "@/lib/types";
 import { filesFromForm, MAX_FILES_PER_KIND, orderProofMessage } from "@/lib/uploads";
-import { parseDispatchForm, parseFulfillForm, parsePaidFields } from "@/lib/validators";
+import { parseAdminEditForm, parseDispatchForm, parseFulfillForm, parsePaidFields } from "@/lib/validators";
 
 function refresh(orderId?: string) {
   revalidatePath("/");
@@ -139,6 +140,90 @@ export async function updateStatus(_prev: ActionState, formData: FormData): Prom
   refresh(orderId);
   const notice = files.length > 0 && result.code === "status_same" ? "proofs" : result.code;
   redirect(`/orders/${orderId}?notice=${notice}`);
+}
+
+export async function saveAdminEdit(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, message: "請先登入。" };
+  if (user.role !== "admin") return { ok: false, message: "只有管理員可以代填。" };
+
+  const orderId = String(formData.get("orderId") ?? "");
+  if (!isSafeId(orderId)) return { ok: false, message: "找不到訂單。" };
+
+  const parsed = parseAdminEditForm(formData);
+  if (!parsed.ok) return parsed;
+  const paid = parsePaidFields(formData);
+  if (!paid.ok) return paid;
+
+  const db = getDb();
+  const existing = getOrder(db, orderId);
+  if (!existing) return { ok: false, message: "找不到訂單。" };
+  if (existing.deletedAt) return { ok: false, message: "這張任務已刪除，請先還原。" };
+
+  const helper = listHelpers(db).find((item) => item.id === parsed.data.helperId);
+  if (!helper) return { ok: false, message: "請選擇已核准的小幫手。" };
+
+  const option = getProductOption(db, parsed.data.task.productOptionId);
+  const keepingCurrent = option?.id === existing.productOptionId || option?.name === existing.productName;
+  if (!option || (!option.active && !keepingCurrent)) return { ok: false, message: "請選擇商品名稱。" };
+
+  const orderProofs = await filesFromForm(formData, "orderProofs", "order_proof");
+  if (!orderProofs.ok) return orderProofs;
+  const receipts = await filesFromForm(formData, "shippingReceipts", "shipping_receipt");
+  if (!receipts.ok) return receipts;
+  const payments = await filesFromForm(formData, "paymentProofs", "payment_proof");
+  if (!payments.ok) return payments;
+  const reimbursements = await filesFromForm(formData, "reimbursementProofs", "reimbursement_proof");
+  if (!reimbursements.ok) return reimbursements;
+
+  const removeIds = formData
+    .getAll("removeFile")
+    .filter((value): value is string => typeof value === "string" && isSafeId(value));
+  const existingFiles = listAttachments(db, orderId);
+  const kept = (kind: AttachmentKind) => existingFiles.filter((file) => file.kind === kind && !removeIds.includes(file.id)).length;
+
+  if (parsed.data.saveReport) {
+    const proofError = orderProofMessage(kept("order_proof"), orderProofs.files.length);
+    if (proofError) return { ok: false, message: proofError };
+  } else if (kept("order_proof") + orderProofs.files.length > MAX_FILES_PER_KIND) {
+    return { ok: false, message: "訂單截圖最多 8 個。" };
+  }
+  if (kept("shipping_receipt") + receipts.files.length > MAX_FILES_PER_KIND) {
+    return { ok: false, message: "運費收據最多 8 個。" };
+  }
+  if (kept("payment_proof") + payments.files.length > MAX_FILES_PER_KIND) {
+    return { ok: false, message: "匯款截圖最多 8 個。" };
+  }
+  if (kept("reimbursement_proof") + reimbursements.files.length > MAX_FILES_PER_KIND) {
+    return { ok: false, message: "運費報銷截圖最多 8 個。" };
+  }
+
+  const result = adminEditOrder(
+    db,
+    user,
+    orderId,
+    {
+      helperId: helper.id,
+      helperName: helper.displayName,
+      productOptionId: option.id,
+      productName: option.name,
+      productLinks: parsed.data.task.productLinks,
+      purchaseNote: parsed.data.task.purchaseNote,
+      dispatchedOn: parsed.data.task.dispatchedOn,
+      deliveryMethod: parsed.data.task.deliveryMethod,
+      deliveryAddress: parsed.data.task.deliveryAddress,
+      saveReport: parsed.data.saveReport,
+      markAccepted: parsed.data.markAccepted,
+      report: parsed.data.report,
+      ...paid.data,
+    },
+    [...orderProofs.files, ...receipts.files, ...payments.files, ...reimbursements.files],
+    removeIds,
+  );
+  if (!result.ok) return { ok: false, message: result.message };
+  refresh(orderId);
+  revalidatePath(`/orders/${orderId}/edit`);
+  redirect(`/orders/${orderId}?notice=proxy_saved`);
 }
 
 export async function removeOrder(formData: FormData) {

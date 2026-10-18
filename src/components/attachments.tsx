@@ -7,7 +7,7 @@ export function AttachmentGallery({
   empty,
   canDelete = true,
 }: {
-  title: string;
+  title: React.ReactNode;
   items: Attachment[];
   empty: string;
   canDelete?: boolean;
