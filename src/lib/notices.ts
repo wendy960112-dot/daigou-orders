@@ -26,6 +26,13 @@ export const NOTICES: Record<string, string> = {
   reset_link: "已產生重設連結。請複製下面的網址，用 LINE 傳給對方。",
   email_sent: "已寄出重設信，連結也顯示在下面。",
   email_failed: "信沒有寄出。請改把下面的連結傳給對方。",
+  purchase_saved: "已儲存進貨。",
+  purchase_deleted: "已刪除這張進貨。",
+  purchase_restored: "已還原這張進貨。",
+  sku_saved: "已儲存商品。",
+  sku_archived: "已封存商品。",
+  sku_restored: "已取消封存。",
+  sku_imported: "已重新匯入商品表。",
 };
 
 export function noticeTone(code: string) {

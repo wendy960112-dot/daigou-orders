@@ -73,6 +73,16 @@ export function orderProofMessage(existing: number, incoming: number) {
   return null;
 }
 
+export function fileFromBuffer(
+  fileName: string,
+  buffer: Buffer,
+): { ok: true; file: { fileName: string; mimeType: string; buffer: Buffer } } | { ok: false; message: string } {
+  if (buffer.length > MAX_UPLOAD_BYTES) return { ok: false, message: `${fileName || "檔案"} 超過 5MB，請縮小後再傳` };
+  const mimeType = sniffMime(buffer);
+  if (!mimeType) return { ok: false, message: "只能上傳 JPG、PNG、WEBP 圖片或 PDF" };
+  return { ok: true, file: { fileName: safeFileName(fileName || "upload"), mimeType, buffer } };
+}
+
 export async function filesFromForm(
   form: FormData,
   field: string,

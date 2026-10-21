@@ -36,6 +36,7 @@ yarn-error.log*
 # local database and uploads
 /data/**
 !/data/.gitkeep
+!/data/rakuten-products.csv
 
 # vercel
 .vercel

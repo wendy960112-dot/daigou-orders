@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const publicPages = pathname === "/login" || pathname === "/signup" || pathname === "/forgot-password" || pathname === "/reset-password";
-  const isPublic = publicPages || pathname.startsWith("/api/auth/");
+  const isPublic = publicPages || pathname.startsWith("/api/auth/") || pathname.startsWith("/api/purchasing/");
   const token = request.cookies.get("daigou_session")?.value;
   if (!isPublic && !token) {
     const url = request.nextUrl.clone();

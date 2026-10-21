@@ -38,6 +38,19 @@ export function canManageStatus(viewer: Viewer) {
   return viewer.role === "admin";
 }
 
+export function canManagePurchases(viewer: { role: Role }) {
+  return viewer.role === "admin";
+}
+
+export function isAdminOnlyPath(path: string) {
+  if (path.startsWith("/purchases")) return true;
+  if (path.startsWith("/summary") || path.startsWith("/helpers") || path.startsWith("/settings") || path.startsWith("/orders/deleted")) {
+    return true;
+  }
+  if (path === "/orders/new") return true;
+  return /\/edit$/.test(path);
+}
+
 export function canReviewHelpers(viewer: Viewer) {
   return viewer.role === "admin";
 }
