@@ -90,7 +90,7 @@ export function listPurchases(
   }
   if (filter.skuId && isSafeId(filter.skuId)) {
     conditions.push(
-      sql`exists (select 1 from purchase_lines where purchase_lines.purchase_id = ${purchases.id} and purchase_lines.sku_id = ${filter.skuId})`,
+      sql`exists (select 1 from purchase_lines where purchase_lines.purchase_id = purchases.id and purchase_lines.sku_id = ${filter.skuId})`,
     );
   }
   const rows = purchaseRows(db, and(...conditions));
@@ -128,8 +128,8 @@ function purchaseRows(db: AppDb, where: ReturnType<typeof and> | ReturnType<type
       otherFees: purchases.otherFees,
       sourceSubject: purchases.sourceSubject,
       deletedAt: purchases.deletedAt,
-      goods: sql<number>`coalesce((select sum(quantity * unit_price) from purchase_lines where purchase_id = ${purchases.id}), 0)`,
-      lineCount: sql<number>`(select count(*) from purchase_lines where purchase_id = ${purchases.id})`,
+      goods: sql<number>`coalesce((select sum(quantity * unit_price) from purchase_lines where purchase_lines.purchase_id = purchases.id), 0)`,
+      lineCount: sql<number>`(select count(*) from purchase_lines where purchase_lines.purchase_id = purchases.id)`,
     })
     .from(purchases)
     .where(where)

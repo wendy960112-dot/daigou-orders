@@ -96,7 +96,11 @@ describe("purchases", () => {
     expect(readUpload(purchase!.files[0]!.id)?.equals(png)).toBe(true);
     expect(getPurchase(db, helper, created.id)).toBeNull();
     expect(listPurchases(db, helper, {})).toEqual([]);
-    expect(listPurchases(db, admin, { q: "中煎" }).map((row) => row.id)).toEqual([created.id]);
+    const listed = listPurchases(db, admin, { q: "中煎" });
+    expect(listed.map((row) => row.id)).toEqual([created.id]);
+    expect(Number(listed[0]?.goods)).toBe(3240);
+    expect(Number(listed[0]?.lineCount)).toBe(1);
+    expect(listPurchases(db, admin, { skuId: sku!.id }).some((row) => row.id === created.id)).toBe(true);
 
     const twd = createPurchase(db, admin, draft(sku!.id, { currency: "TWD", shippingFee: 0, lines: [{ skuId: sku!.id, quantity: 1, unitPrice: 380 }] }), []);
     expect(twd.ok).toBe(true);
