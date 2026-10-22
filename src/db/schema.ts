@@ -127,8 +127,97 @@ export const loginAttempts = sqliteTable(
   (table) => [index("login_attempts_email_idx").on(table.email, table.createdAt)],
 );
 
+export const skus = sqliteTable(
+  "skus",
+  {
+    id: text("id").primaryKey(),
+    importKey: text("import_key").unique(),
+    code: text("code"),
+    name: text("name").notNull(),
+    variant: text("variant").notNull().default(""),
+    category: text("category"),
+    subcategory: text("subcategory"),
+    salePrice: integer("sale_price").notNull().default(0),
+    cost: integer("cost").notNull().default(0),
+    archivedAt: text("archived_at"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [index("skus_name_idx").on(table.name), index("skus_code_idx").on(table.code)],
+);
+
+export const purchases = sqliteTable(
+  "purchases",
+  {
+    id: text("id").primaryKey(),
+    purchasedOn: text("purchased_on").notNull(),
+    supplier: text("supplier").notNull(),
+    currency: text("currency", { enum: ["JPY", "TWD"] }).notNull(),
+    orderId: text("order_id").references(() => orders.id),
+    shippingFee: integer("shipping_fee").notNull().default(0),
+    otherFees: integer("other_fees").notNull().default(0),
+    notes: text("notes"),
+    sourceRef: text("source_ref"),
+    sourceSubject: text("source_subject"),
+    deletedAt: text("deleted_at"),
+    deletedBy: text("deleted_by").references(() => users.id),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [index("purchases_date_idx").on(table.purchasedOn), index("purchases_source_idx").on(table.sourceRef)],
+);
+
+export const purchaseLines = sqliteTable(
+  "purchase_lines",
+  {
+    id: text("id").primaryKey(),
+    purchaseId: text("purchase_id")
+      .notNull()
+      .references(() => purchases.id, { onDelete: "cascade" }),
+    skuId: text("sku_id")
+      .notNull()
+      .references(() => skus.id),
+    quantity: integer("quantity").notNull(),
+    unitPrice: integer("unit_price").notNull(),
+  },
+  (table) => [index("purchase_lines_purchase_idx").on(table.purchaseId), index("purchase_lines_sku_idx").on(table.skuId)],
+);
+
+export const purchaseFiles = sqliteTable(
+  "purchase_files",
+  {
+    id: text("id").primaryKey(),
+    purchaseId: text("purchase_id")
+      .notNull()
+      .references(() => purchases.id, { onDelete: "cascade" }),
+    fileName: text("file_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("purchase_files_purchase_idx").on(table.purchaseId)],
+);
+
+export const purchaseAuditLogs = sqliteTable(
+  "purchase_audit_logs",
+  {
+    id: text("id").primaryKey(),
+    purchaseId: text("purchase_id")
+      .notNull()
+      .references(() => purchases.id, { onDelete: "cascade" }),
+    actorId: text("actor_id").references(() => users.id),
+    actorLabel: text("actor_label").notNull(),
+    action: text("action").notNull(),
+    summary: text("summary").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("purchase_audit_purchase_idx").on(table.purchaseId)],
+);
+
 export type User = typeof users.$inferSelect;
 export type ProductOption = typeof productOptions.$inferSelect;
 export type Order = typeof orders.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
+export type Sku = typeof skus.$inferSelect;
+export type Purchase = typeof purchases.$inferSelect;

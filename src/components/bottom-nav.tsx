@@ -13,6 +13,7 @@ export function BottomNav({ role, inboxCount = 0 }: { role: Role; inboxCount?: n
   ];
   if (role === "admin") {
     items.push({ href: "/orders/new", label: "發任務", active: path === "/orders/new", badge: 0 });
+    items.push({ href: "/purchases", label: "進貨", active: path.startsWith("/purchases"), badge: 0 });
     items.push({ href: "/summary", label: "彙總", active: path.startsWith("/summary"), badge: 0 });
     items.push({ href: "/helpers", label: "幫手", active: path.startsWith("/helpers"), badge: 0 });
   } else {

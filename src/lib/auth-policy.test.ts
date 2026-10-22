@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { canManageStatus, canViewOrder, devLoginAllowed } from "./auth-policy";
+import { canManagePurchases, canManageStatus, canViewOrder, devLoginAllowed, isAdminOnlyPath } from "./auth-policy";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -45,5 +45,21 @@ describe("order access", () => {
     expect(canManageStatus({ id: "user_mei", role: "helper" })).toBe(false);
     expect(canViewOrder({ id: "user_mei", role: "helper" }, { ...order, deletedAt: "2026-10-16T00:00:00.000Z" })).toBe(false);
     expect(canViewOrder({ id: "user_wendy", role: "admin" }, { ...order, deletedAt: "2026-10-16T00:00:00.000Z" })).toBe(true);
+  });
+});
+
+describe("purchase access", () => {
+  it("keeps purchasing pages and actions to the admin", () => {
+    expect(canManagePurchases({ role: "admin" })).toBe(true);
+    expect(canManagePurchases({ role: "helper" })).toBe(false);
+    expect(canManagePurchases({ role: "pending" })).toBe(false);
+    expect(isAdminOnlyPath("/purchases")).toBe(true);
+    expect(isAdminOnlyPath("/purchases/new")).toBe(true);
+    expect(isAdminOnlyPath("/purchases/skus")).toBe(true);
+    expect(isAdminOnlyPath("/purchases/report")).toBe(true);
+    expect(isAdminOnlyPath("/purchases/deleted")).toBe(true);
+    expect(isAdminOnlyPath("/")).toBe(false);
+    expect(isAdminOnlyPath("/inbox")).toBe(false);
+    expect(isAdminOnlyPath("/orders/order_mei_oct")).toBe(false);
   });
 });
