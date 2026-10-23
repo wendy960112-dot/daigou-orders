@@ -3,8 +3,9 @@
 import { useActionState, useState } from "react";
 import { saveOrder } from "@/actions/orders";
 import { currencyLabel } from "@/lib/format";
-import { DEFAULT_CARRIER, type DeliveryMethod } from "@/lib/tasks";
+import type { DeliveryMethod } from "@/lib/tasks";
 import { initialActionState, type Currency } from "@/lib/types";
+import { CarrierField } from "./carrier-field";
 import { Field } from "./field";
 import { inputClass, primaryButtonClass } from "./styles";
 
@@ -28,6 +29,7 @@ export function FulfillForm({
     orderAmount: number | null;
     orderCurrency: Currency | null;
     orderDate: string | null;
+    carrier: string | null;
     trackingNumber: string | null;
     shipDate: string | null;
     shippingCost: number | null;
@@ -115,9 +117,7 @@ export function FulfillForm({
 
       <div className="space-y-4 rounded-2xl border border-line bg-white/60 p-3">
         <p className="text-sm font-semibold">{shippingTitle}</p>
-        <Field label="物流公司" hint="固定為 EMS，不用改。">
-          <input name="carrier" readOnly value={DEFAULT_CARRIER} aria-readonly="true" className={`${inputClass} bg-paper`} />
-        </Field>
+        <CarrierField value={initial.carrier} />
         <Field label="追蹤單號（非必填）" hint="沒有單號可以留空。有填追蹤單號或寄出日期，進度才會變成已寄出。">
           <input name="trackingNumber" className={inputClass} defaultValue={initial.trackingNumber ?? ""} placeholder="可以先留空" />
         </Field>

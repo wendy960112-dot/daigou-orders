@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { makeReceiptPng } from "./png";
 import { filesFromForm, orderProofMessage, sniffMime } from "./uploads";
-import { parseFulfillForm, parseOrderForm, parsePaidFields } from "./validators";
+import { parseAdminEditForm, parseFulfillForm, parseOrderForm, parsePaidFields } from "./validators";
 
 function orderForm(overrides: Record<string, string> = {}) {
   const form = new FormData();
@@ -51,26 +51,59 @@ describe("parsePaidFields", () => {
   });
 });
 
+function fulfillForm(overrides: Record<string, string> = {}) {
+  const form = new FormData();
+  const values = {
+    productOptionId: "product_marukyu",
+    orderAmount: "3200",
+    orderCurrency: "JPY",
+    orderDate: "2026-10-16",
+    ...overrides,
+  };
+  for (const [key, value] of Object.entries(values)) form.set(key, value);
+  return form;
+}
+
 describe("parseFulfillForm", () => {
-  it("fixes the carrier to EMS and leaves tracking optional", () => {
-    const form = new FormData();
-    form.set("productOptionId", "product_marukyu");
-    form.set("orderAmount", "3200");
-    form.set("orderCurrency", "JPY");
-    form.set("orderDate", "2026-10-16");
-    form.set("carrier", "Yamato");
-    const blank = parseFulfillForm(form);
+  it("defaults the carrier to EMS, accepts ヤマト, and leaves tracking optional", () => {
+    const blank = parseFulfillForm(fulfillForm());
     expect(blank.ok).toBe(true);
     if (!blank.ok) return;
     expect(blank.data.carrier).toBe("EMS");
     expect(blank.data.trackingNumber).toBeNull();
 
-    form.set("trackingNumber", " EE123456789JP ");
-    const filled = parseFulfillForm(form);
-    expect(filled.ok).toBe(true);
-    if (!filled.ok) return;
-    expect(filled.data.trackingNumber).toBe("EE123456789JP");
-    expect(filled.data.carrier).toBe("EMS");
+    const yamato = parseFulfillForm(fulfillForm({ carrier: " ヤマト ", trackingNumber: " EE123456789JP " }));
+    expect(yamato.ok).toBe(true);
+    if (!yamato.ok) return;
+    expect(yamato.data.carrier).toBe("ヤマト");
+    expect(yamato.data.trackingNumber).toBe("EE123456789JP");
+
+    const rejected = parseFulfillForm(fulfillForm({ carrier: "Yamato" }));
+    expect(rejected.ok).toBe(false);
+    if (rejected.ok) return;
+    expect(rejected.message).toBe("請選擇 EMS 或 ヤマト");
+  });
+});
+
+describe("parseAdminEditForm", () => {
+  it("accepts only EMS or ヤマト when the report is saved", () => {
+    const form = fulfillForm({
+      helperId: "user_mei",
+      productLinks: "https://example.com/a",
+      purchaseNote: "兩罐",
+      dispatchedOn: "2026-10-16",
+      deliveryMethod: "handoff",
+      saveReport: "on",
+      carrier: "ヤマト",
+    });
+    const parsed = parseAdminEditForm(form);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.data.report?.carrier).toBe("ヤマト");
+
+    form.set("carrier", "黑貓宅急便");
+    const rejected = parseAdminEditForm(form);
+    expect(rejected.ok).toBe(false);
   });
 });
 

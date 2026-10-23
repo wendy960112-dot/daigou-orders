@@ -6,7 +6,15 @@ export const DELIVERY_METHODS = [
 
 export type DeliveryMethod = (typeof DELIVERY_METHODS)[number]["value"];
 
-export const DEFAULT_CARRIER = "EMS";
+export const CARRIERS = ["EMS", "ヤマト"] as const;
+
+export type Carrier = (typeof CARRIERS)[number];
+
+export const DEFAULT_CARRIER: Carrier = "EMS";
+
+export function isCarrier(value: string | null | undefined): value is Carrier {
+  return value === "EMS" || value === "ヤマト";
+}
 
 export const TASK_STATUSES = [
   { value: "pending", label: "待接單" },

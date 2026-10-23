@@ -1,5 +1,5 @@
 import { isRealDate, isSafeId } from "./format";
-import { DEFAULT_CARRIER, isDeliveryMethod, type DeliveryMethod } from "./tasks";
+import { DEFAULT_CARRIER, isCarrier, isDeliveryMethod, type Carrier, type DeliveryMethod } from "./tasks";
 import type { Currency, OrderInput } from "./types";
 
 function fail(message: string): { ok: false; message: string } {
@@ -45,6 +45,12 @@ function parseCurrency(value: string): { ok: true; value: Currency } | { ok: fal
   return fail("請選擇日圓或新台幣");
 }
 
+function parseCarrier(value: string): { ok: true; value: Carrier } | { ok: false; message: string } {
+  const trimmed = value.trim() || DEFAULT_CARRIER;
+  if (!isCarrier(trimmed)) return fail("請選擇 EMS 或 ヤマト");
+  return { ok: true, value: trimmed };
+}
+
 function cleanText(value: string, max: number, label: string) {
   const trimmed = value.trim();
   if (!trimmed) return { ok: true as const, value: null };
@@ -80,7 +86,7 @@ export function parseOrderForm(
   if (!orderDate.ok) return orderDate;
   const expectedArrivalDate = parseOptionalDate(readString(form, "expectedArrivalDate"), "預計到貨日");
   if (!expectedArrivalDate.ok) return expectedArrivalDate;
-  const carrier = cleanText(readString(form, "carrier"), 100, "物流公司");
+  const carrier = parseCarrier(readString(form, "carrier"));
   if (!carrier.ok) return carrier;
   const trackingNumber = cleanText(readString(form, "trackingNumber"), 100, "追蹤單號");
   if (!trackingNumber.ok) return trackingNumber;
@@ -171,7 +177,7 @@ export type FulfillFields = {
   orderAmount: number;
   orderCurrency: Currency;
   orderDate: string;
-  carrier: string | null;
+  carrier: Carrier;
   trackingNumber: string | null;
   shipDate: string | null;
   shippingCost: number | null;
@@ -200,6 +206,8 @@ export function parseFulfillForm(form: FormData): { ok: true; data: FulfillField
     if (!parsed.ok) return parsed;
     shippingCurrency = parsed.value;
   }
+  const carrier = parseCarrier(readString(form, "carrier"));
+  if (!carrier.ok) return carrier;
   const notes = cleanText(readString(form, "notes"), 4000, "備註");
   if (!notes.ok) return notes;
   return {
@@ -209,7 +217,7 @@ export function parseFulfillForm(form: FormData): { ok: true; data: FulfillField
       orderAmount: orderAmount.value,
       orderCurrency: orderCurrency.value,
       orderDate: orderDate.value,
-      carrier: DEFAULT_CARRIER,
+      carrier: carrier.value,
       trackingNumber: trackingNumber.value,
       shipDate: shipDate.value,
       shippingCost: shippingCost.value,
@@ -255,6 +263,8 @@ export function parseAdminEditForm(form: FormData): { ok: true; data: AdminEditF
     if (!parsed.ok) return parsed;
     shippingCurrency = parsed.value;
   }
+  const carrier = parseCarrier(readString(form, "carrier"));
+  if (!carrier.ok) return carrier;
   const notes = cleanText(readString(form, "notes"), 4000, "備註");
   if (!notes.ok) return notes;
   return {
@@ -268,7 +278,7 @@ export function parseAdminEditForm(form: FormData): { ok: true; data: AdminEditF
         orderAmount: orderAmount.value,
         orderCurrency: orderCurrency.value,
         orderDate: orderDate.value,
-        carrier: DEFAULT_CARRIER,
+        carrier: carrier.value,
         trackingNumber: trackingNumber.value,
         shipDate: shipDate.value,
         shippingCost: shippingCost.value,
