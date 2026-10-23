@@ -74,6 +74,7 @@ export default async function EditOrderPage({ params }: { params: Promise<{ id: 
         orderAmount={order.orderAmount}
         orderCurrency={order.orderCurrency}
         orderDate={order.orderDate}
+        carrier={order.carrier}
         trackingNumber={order.trackingNumber}
         shipDate={order.shipDate}
         shippingCost={order.shippingCost}

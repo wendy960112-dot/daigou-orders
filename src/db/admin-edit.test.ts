@@ -90,6 +90,17 @@ describe("admin edits a task for the helper", () => {
     expect(order?.taskStatus).toBe("ordered");
     expect(order?.orderAmount).toBe(5400);
     expect(order?.carrier).toBe("EMS");
+    const yamato = adminEditOrder(
+      db,
+      admin,
+      "order_mei_task",
+      taskInput({ saveReport: true, report: report({ carrier: "ヤマト" }) }),
+      [screenshot],
+      [],
+    );
+    expect(yamato).toEqual({ ok: true });
+    expect(getOrder(db, "order_mei_task")?.carrier).toBe("ヤマト");
+    expect(getOrder(db, "order_mei_task")?.taskStatus).toBe("ordered");
     expect(hasProxy(order?.proxyFields, "orderAmount")).toBe(true);
     expect(hasProxy(order?.proxyFields, "orderProof")).toBe(true);
     expect(listAudit(db, "order_mei_task").some((entry) => entry.summary.includes("由管理員代填") && entry.actorId === "user_wendy")).toBe(true);

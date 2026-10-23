@@ -68,6 +68,29 @@ describe("shipped status ignores carrier", () => {
     );
     expect(dated.ok).toBe(true);
     expect(getOrder(db, "order_mei_task")?.taskStatus).toBe("shipped");
+
+    const yamatoOnly = fulfillOrder(
+      db,
+      { id: "user_mei", role: "helper" },
+      "order_mei_task",
+      { ...report, carrier: "ヤマト", trackingNumber: null, shipDate: null },
+      [],
+    );
+    expect(yamatoOnly.ok).toBe(true);
+    const yamatoOrder = getOrder(db, "order_mei_task");
+    expect(yamatoOrder?.carrier).toBe("ヤマト");
+    expect(yamatoOrder?.taskStatus).toBe("ordered");
+  });
+
+  it("still shows carriers that were saved before the EMS / ヤマト choice", () => {
+    const db = openAppDatabase(":memory:");
+    insertDemoData(db);
+    expect(getOrder(db, "order_mei_aug")?.carrier).toBe("Yamato");
+    expect(getOrder(db, "order_mei_sep")?.carrier).toBe("黑貓宅急便");
+    expect(getOrder(db, "order_ken_bottles")?.carrier).toBe("日本郵便");
+    expect(listOrders(db, { id: "user_wendy", role: "admin" }, { month: null }).map((order) => order.carrier)).toEqual(
+      expect.arrayContaining(["Yamato", "黑貓宅急便", "日本郵便"]),
+    );
   });
 
   it("does not mark a newly created order shipped just because the carrier is EMS", () => {
